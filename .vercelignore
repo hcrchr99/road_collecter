@@ -1,0 +1,51 @@
+# Vercel 部署忽略清单 —— 列出的内容不会上传到线上站点
+#
+# 说明：本文件是「排除清单」不是「包含清单」。
+# 未被排除的文件（index.html、docs/、icons、manifest 等）都会公开可访问。
+# 当前 reports/*.txt 与 examples/*.json 会一并公开，它们是合成数据的自检输出，
+# 不含真实轨迹坐标；若将来这些目录换成真实数据，务必在此追加排除规则。
+
+# ---- 不参与前端部署的 Python 分析流水线 ----
+# 排除脚本后，线上站点无法直接下载到源码；源码仍完整保留在 GitHub 仓库中
+*.py
+
+# ---- 开发与生成物 ----
+demo_pack.zip
+demo_samples.csv
+sample_run.csv
+out/
+vis/
+fused/
+out_selftest/
+out_fused_selftest/
+
+# ---- 个人采集数据（含真实轨迹坐标） ----
+*.zip
+userdata/
+collect_packs/
+pack_inspect.txt
+user_pipeline.txt
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 版本控制与文档 ----
+.git/
+.gitignore
+.gitattributes
+README.md
+LICENSE

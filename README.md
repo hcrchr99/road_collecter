@@ -36,9 +36,11 @@ IMU 与摄像头不是重复的信息源，而是两个**正交维度**：
 
 ### 1. 部署采集端并采集
 
-`collector.html` 是单文件网页应用，把它放到任意 **HTTPS** 静态托管（Vercel / Cloudflare
-Pages / GitHub Pages 均可，免费）。**必须 HTTPS** —— 用 `file://` 双击打开时浏览器会拒绝
-传感器与定位权限。
+采集端是单文件的 `index.html`（零构建、零依赖的静态页面），仓库已按 Vercel 的结构组织好，
+推送到 `main` 即可自动部署，打开根路径就是采集端。详细步骤见 [`DEPLOY.md`](DEPLOY.md)。
+
+也可放到任意 **HTTPS** 静态托管（Cloudflare Pages / GitHub Pages 等，免费）。
+**必须 HTTPS** —— 用 `file://` 双击打开时浏览器会拒绝传感器与定位权限。
 
 手机打开后按页面三步走：
 
@@ -104,24 +106,31 @@ python make_demo_zip.py         # 生成演示采集包 demo_pack.zip
 ## 目录结构
 
 ```
-collector.html        采集端 PWA（IMU + 摄像头，单文件，无依赖）
+index.html            采集端 PWA（IMU + 摄像头，单文件，无依赖）—— Vercel 站点入口
 analyze.py            IMU 侧：重采样、重力分离、事件检测、特征、分类、聚类、健康度指数
 vision.py             视觉侧：经典 CV 基线 + 可插拔 YOLO 后端
 fusion.py             双模态融合：15 条决策规则 + 空间去重 + 时间戳对齐
 tune_detector.py      检测门限标定工具（真实数据上重标参数用）
+
+vercel.json           Vercel 部署配置（零构建静态站点）
+.vercelignore         部署时排除 Python 脚本与本地数据
+DEPLOY.md             部署说明与自检清单
 
 make_demo_zip.py      生成端到端演示采集包
 make_sample.py        生成采集端同格式的样本 CSV
 inspect_pack.py       采集包结构与信号概览（排查"数据是否正常"）
 replay_detect.py      忠实回放采集端检测算法（排查"为什么没检出事件"）
 
-docs/                 项目文档
+docs/                 项目文档（随站点一起发布，可访问 /docs/xxx.html）
   ├─ 项目启动方案.html        赛事要求、12 天排期、团队分工、技术难点与对策
   └─ 视觉融合方案_v0.2.html   视觉融合架构、融合决策表、踩坑记录
 
 reports/              各模块自检与验证输出（可复现的证据）
 examples/             演示数据的输出样例（GeoJSON / CSV）
 ```
+
+> 采集端文件名从 `collector.html` 改为 `index.html` 是为了让站点根路径直接落在采集端上。
+> 代码里提到 `collector.html` 的地方（如 `replay_detect.py` 的注释）指的是同一个文件。
 
 ---
 

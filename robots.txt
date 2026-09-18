@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /$
+Allow: /docs/
+
+# 采集端与文档可被索引；分析脚本不是网页，无需抓取
+Disallow: /*.py$

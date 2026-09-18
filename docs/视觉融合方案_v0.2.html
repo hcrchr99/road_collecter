@@ -125,7 +125,7 @@
   </ul>
   <div class="notice warn">
     <strong>你需要做的唯一一件事</strong>
-    把 <code>collector.html</code> 部署到 HTTPS 地址（Vercel 或 Cloudflare Pages，免费且几分钟完成），再从手机浏览器打开。本地双击文件打开是无法拿到权限的。
+    把 <code>index.html</code>（采集端入口）部署到 HTTPS 地址（Vercel 或 Cloudflare Pages，免费且几分钟完成），再从手机浏览器打开。本地双击文件打开是无法拿到权限的。
   </div>
 
   <h2>三、问题三：标定问题，以及为什么"换思路"比"标得更准"更对</h2>
@@ -319,7 +319,7 @@ python make_demo_zip.py        # 生成演示包后可跑通 1-3 全链路</pre>
   <h2>八、下一步建议</h2>
   <p>按优先级：<b>① 先把采集端部署到 HTTPS 并去采一趟真实数据</b>——这是唯一能产出"别人替代不了"的资产，也是验证权限修复是否真的生效的唯一方式；② 采回来之后跑完整流水线，看真实帧上经典 CV 基线到底退化多少，这个数字决定你要不要在视觉模型上投入；③ 再决定是补 YOLO 还是先做展示端地图。</p>
 
-  <p class="foot">本文对应代码：<code>collector.html</code> v0.2、<code>analyze.py</code> v0.1.1、<code>vision.py</code> v0.1、<code>fusion.py</code> v0.1、<code>make_demo_zip.py</code>。三个 <code>--selftest</code> 与端到端演示均已验证通过。RDD2022 使用请遵守其许可协议并在方案中署名。</p>
+  <p class="foot">本文对应代码：<code>index.html</code> v0.2（原 <code>collector.html</code>）、<code>analyze.py</code> v0.1.1、<code>vision.py</code> v0.1、<code>fusion.py</code> v0.1、<code>make_demo_zip.py</code>。三个 <code>--selftest</code> 与端到端演示均已验证通过。RDD2022 使用请遵守其许可协议并在方案中署名。</p>
 
 </div>
 </body>

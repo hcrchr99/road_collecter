@@ -35,6 +35,13 @@ env/
 Thumbs.db
 desktop.ini
 
+# ---- Vercel ----
+# 只忽略本地 CLI 关联文件，保留 .vercel/project.json（不含密钥，用于共享项目设置）
+.vercel/.env.*
+.vercel/output/
+.vercel/cache/
+.vercelignore 是部署配置，需要入库，不要在这里忽略
+
 # ---- 临时文件 ----
 *.tmp
 ~$*

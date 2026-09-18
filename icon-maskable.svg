@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="路面体检 RoadCheck">
+  <rect width="512" height="512" fill="#185FA5"/>
+  <rect x="120" y="322" width="272" height="34" rx="17" fill="#85B7EB"/>
+  <path d="M186 214 L272 126 L272 184 L346 184 L242 290 L242 224 Z" fill="#FFFFFF"/>
+</svg>
