@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoadCheck 标注工具</title>
+<style>
+:root{
+  --bg:#F7F6F3; --card:#FFFFFF; --line:#E7E5E0; --text:#1F1F1D; --muted:#6B6A64; --faint:#9A9992;
+  --blue:#185FA5; --blue-bg:#E6F1FB; --green:#3B6D11; --green-bg:#EAF3DE;
+  --red:#A32D2D; --red-bg:#FCEBEB; --amber:#854F0B; --amber-bg:#FAEEDA;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.55;}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:12px 18px;position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+header h1{font-size:15px;font-weight:600;margin:0;}
+header .meta{font-size:12.5px;color:var(--muted);}
+header .spacer{flex:1;}
+.wrap{max-width:1180px;margin:0 auto;padding:18px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+.card h2{font-size:14px;font-weight:600;margin:0 0 10px;}
+.sub{font-size:12.5px;color:var(--muted);margin:0 0 12px;}
+button{font-family:inherit;font-size:13.5px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+  color:var(--text);padding:9px 14px;cursor:pointer;font-weight:500;}
+button:hover{border-color:var(--muted);}
+button:disabled{opacity:.4;cursor:default;}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff;}
+button.sm{font-size:12.5px;padding:7px 11px;}
+button.on{background:var(--blue-bg);border-color:var(--blue);color:var(--blue);}
+input[type=text]{font-family:inherit;font-size:13.5px;padding:8px 11px;border:1px solid var(--line);
+  border-radius:8px;background:#FAFAF8;color:var(--text);width:100%;}
+input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
+.fld{margin-bottom:10px;}
+.fld label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px;font-weight:500;}
+#drop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;text-align:center;color:var(--muted);
+  background:#FAFAF8;cursor:pointer;transition:.15s;}
+#drop:hover,#drop.over{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
+#drop b{display:block;font-size:14px;color:var(--text);margin-bottom:4px;font-weight:600;}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+.tbl th{text-align:left;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line);}
+.tbl td{padding:6px 8px;border-bottom:1px solid #F3F2EE;font-variant-numeric:tabular-nums;}
+.tbl tr.sel{background:var(--blue-bg);}
+.tbl tr{cursor:pointer;}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;font-weight:500;}
+.b-done{background:var(--green-bg);color:var(--green);}
+.b-todo{background:#F1EFE8;color:var(--muted);}
+.b-fp{background:var(--red-bg);color:var(--red);}
+.viewer{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
+@media(max-width:860px){.viewer{grid-template-columns:1fr;}}
+#stage{background:#22211F;border-radius:10px;min-height:340px;display:flex;align-items:center;
+  justify-content:center;overflow:hidden;position:relative;}
+#stage img{max-width:100%;max-height:64vh;display:block;}
+#stage .ph{color:#8B8A85;font-size:13px;padding:40px;text-align:center;}
+#film{display:flex;gap:6px;overflow-x:auto;padding:9px 0;}
+#film img{height:56px;border-radius:6px;border:2px solid transparent;cursor:pointer;flex:none;opacity:.62;}
+#film img.sel{border-color:#fff;opacity:1;}
+.filmbox{background:#22211F;border-radius:10px;padding:0 9px;margin-top:8px;}
+.lblgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
+.lblgrid button{font-size:12.5px;padding:8px 6px;}
+.k{font-size:11px;color:var(--faint);font-weight:400;}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.hint{background:var(--amber-bg);border:1px solid #EFD9AE;border-radius:9px;padding:10px 13px;font-size:12.5px;
+  color:var(--amber);margin-bottom:12px;}
+.ok{background:var(--green-bg);border:1px solid #CFE2B4;border-radius:9px;padding:10px 13px;font-size:12.5px;
+  color:var(--green);margin-bottom:12px;}
+.err{background:var(--red-bg);border:1px solid #F0C9C9;border-radius:9px;padding:10px 13px;font-size:12.5px;
+  color:var(--red);margin-bottom:12px;}
+.hidden{display:none!important;}
+.kbd{display:inline-block;font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#F1EFE8;
+  border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--muted);}
+.legend{font-size:12px;color:var(--muted);}
+.legend div{margin-bottom:3px;}
+.sev{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;}
+.sev button{font-size:12px;padding:7px 4px;}
+.tabs{display:flex;gap:6px;margin-bottom:12px;}
+.tabs button{font-size:13px;padding:7px 13px;}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RoadCheck 标注工具</h1>
+  <span class="meta" id="hdrMeta">未加载采集包</span>
+  <span class="spacer"></span>
+  <span class="meta" id="hdrProgress"></span>
+  <button class="sm" id="btnExport" disabled>导出标注</button>
+</header>
+
+<div class="wrap">
+
+  <div class="card" id="loadCard">
+    <h2>1 · 载入采集包</h2>
+    <p class="sub">拖入或选择采集端导出的 <b>.zip</b>（含 samples.csv / events.csv / sweeps.csv / meta.json）。
+      全程在本机浏览器内存中解析，<b>不上传任何数据</b>。</p>
+    <div id="drop">
+      <b>把采集包 zip 拖到这里</b>
+      或点击选择文件
+      <input type="file" id="file" accept=".zip" class="hidden">
+    </div>
+    <div id="loadErr" class="err hidden"></div>
+    <div id="loadWarn" class="hint hidden"></div>
+  </div>
+
+  <div class="card hidden" id="whoCard">
+    <h2>2 · 标注者</h2>
+    <p class="sub">标注者与标注时间会写进导出文件的每一行，用于后续算标注者一致性（Cohen's Kappa）。</p>
+    <div class="fld">
+      <label>标注者（必填）</label>
+      <input type="text" id="annotator" placeholder="姓名或代号，如：alice / 张三" maxlength="32" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="card hidden" id="workCard">
+    <div class="tabs">
+      <button id="tabEv" class="on">IMU 事件 <span class="k" id="cntEv"></span></button>
+      <button id="tabFr">视觉帧 <span class="k" id="cntFr"></span></button>
+    </div>
+
+    <div id="paneEv">
+      <div class="viewer">
+        <div>
+          <div id="stageEv"><div class="ph">从右侧列表选一个事件</div></div>
+          <div class="filmbox"><div id="filmEv"></div></div>
+        </div>
+        <div>
+          <div id="evInfo" class="sub">—</div>
+          <div id="evPanel" class="hidden">
+            <div class="sub" style="margin-bottom:5px;"><b>真值判定</b>（你的结论）</div>
+            <div class="lblgrid" id="truthBtns"></div>
+            <div class="row" style="margin-bottom:10px;">
+              <button class="sm" id="btnFP">标记为误报</button>
+            </div>
+            <div class="sub" style="margin-bottom:5px;">把握程度</div>
+            <div class="sev" id="confBtns"></div>
+            <div class="fld">
+              <label>备注（有疑问时写）</label>
+              <input type="text" id="noteEv" placeholder="可留空" maxlength="120">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="evListBox" style="margin-top:16px;"></div>
+    </div>
+
+    <div id="paneFr" class="hidden">
+      <div class="viewer">
+        <div>
+          <div id="stageFr"><div class="ph">从右侧列表选一帧</div></div>
+          <div class="filmbox"><div id="filmFr"></div></div>
+        </div>
+        <div>
+          <div id="frInfo" class="sub">—</div>
+          <div id="frPanel" class="hidden">
+            <div class="sub" style="margin-bottom:5px;"><b>真值判定</b></div>
+            <div class="lblgrid" id="truthFrBtns"></div>
+            <div class="sub" style="margin-bottom:5px;">严重程度 <span class="k">按 schema 3.3 量化标准</span></div>
+            <div class="sev" id="sevBtns"></div>
+            <div class="row" style="margin-bottom:10px;">
+              <button class="sm" id="btnOcc">标记遮挡/无法判定</button>
+            </div>
+            <div class="sub" style="margin-bottom:5px;">把握程度</div>
+            <div class="sev" id="confFrBtns"></div>
+            <div class="fld">
+              <label>备注</label>
+              <input type="text" id="noteFr" placeholder="可留空" maxlength="120">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="frListBox" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <div class="card" id="helpCard">
+    <h2>字段取值与快捷键</h2>
+    <div class="legend">
+      <div><b>真值标签</b>：坑洼 · 井盖 · 减速带 · 粗糙路面 · 纵向裂缝 · 横向裂缝 · 龟裂 · 平路 · 遮挡/无法判定</div>
+      <div><b>严格区分</b>「平路」（确定没病害）与「遮挡/无法判定」（看不清）——混用会让准确率虚高。</div>
+      <div><b>严重度</b>：light 轻 · medium 中 · severe 重，归属有疑问时<b>记低不记高</b>并在备注说明。</div>
+      <div style="margin-top:6px;">
+        <span class="kbd">1</span>–<span class="kbd">9</span> 选真值 ·
+        <span class="kbd">J</span>/<span class="kbd">K</span> 上/下一条 ·
+        <span class="kbd">←</span>/<span class="kbd">→</span> 切换帧 ·
+        <span class="kbd">F</span> 误报 ·
+        <span class="kbd">H</span>/<span class="kbd">M</span>/<span class="kbd">L</span> 把握高/中/低
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder('utf-8');
+
+/* ============ 常量：与 labels/schema.md v1.0 逐字对齐 ============ */
+const TRUTH_IMU = ['坑洼','井盖','减速带','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
+const TRUTH_VIS = TRUTH_IMU;
+const SEVERITY  = ['light','medium','severe'];
+const SEV_CN    = { light:'轻', medium:'中', severe:'重' };
+const CONF      = ['high','mid','low'];
+const CONF_CN   = { high:'高', mid:'中', low:'低' };
+const SCHEMA_VERSION = '1.0';
+
+/* ============ 极简 ZIP 解压（对应采集端 makeZip 的 STORE 模式） ============ */
+/* 采集端用 method=0（不压缩）打包，所以这里只需读 local file header 后直接取原始字节，
+   不需要实现 DEFLATE。若遇到 method=8（压缩），明确报错而不是静默产出坏数据。 */
+function unzip(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const files = [];
+  let p = 0;
+  while (p + 30 <= u8.length) {
+    const sig = dv.getUint32(p, true);
+    if (sig === 0x02014b50 || sig === 0x06054b50) break;   // 中央目录 / EOCD，结束
+    if (sig !== 0x04034b50) throw new Error('ZIP 结构异常：偏移 ' + p + ' 处签名不匹配');
+    const method  = dv.getUint16(p + 8, true);
+    const csize   = dv.getUint32(p + 18, true);
+    const usize   = dv.getUint32(p + 22, true);
+    const nlen    = dv.getUint16(p + 26, true);
+    const elen    = dv.getUint16(p + 28, true);
+    const name    = dec.decode(u8.subarray(p + 30, p + 30 + nlen));
+    const dstart  = p + 30 + nlen + elen;
+    if (method !== 0) {
+      throw new Error('采集包使用了压缩（method=' + method + '），本工具只支持采集端默认的 STORE 模式');
+    }
+    files.push({ name, data: u8.subarray(dstart, dstart + usize) });
+    p = dstart + csize;
+  }
+  return files;
+}
+
+function csvParse(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) return { head: [], rows: [] };
+  const head = splitCsvLine(lines[0]);
+  const rows = lines.slice(1).map(l => {
+    const cells = splitCsvLine(l), o = {};
+    head.forEach((h, i) => o[h] = cells[i] === undefined ? '' : cells[i]);
+    return o;
+  });
+  return { head, rows };
+}
+function splitCsvLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+function csvJoin(rows) {
+  return rows.map(r => r.map(v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\n') + '\n';
+}
+function nowIso() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset(), s = off >= 0 ? '+' : '-', a = Math.abs(off);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T'
+    + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
+    + s + p(Math.floor(a / 60)) + ':' + p(a % 60);
+}
+
+/* ============ 状态 ============ */
+const P = {
+  packId: '', meta: null, blobUrls: [],
+  events: [], frames: [],
+  annotator: '', dirty: false,
+  selEv: -1, selFr: -1, tab: 'ev'
+};
+
+/* ============ 解包 ============ */
+async function loadZip(file) {
+  $('loadErr').classList.add('hidden');
+  $('loadWarn').classList.add('hidden');
+  try {
+    const buf = await file.arrayBuffer();
+    const entries = unzip(new Uint8Array(buf));
+    const byName = {};
+    for (const e of entries) byName[e.name] = e;
+
+    if (!byName['meta.json']) throw new Error('包里没有 meta.json —— 是不是选错了文件？');
+    const meta = JSON.parse(dec.decode(byName['meta.json'].data));
+
+    revokeUrls();
+    P.meta = meta;
+    P.packId = packIdOf(file.name, meta);
+    P.blobUrls = [];
+
+    /* 事件：以 events.csv 为准，把 frames/ev*.jpg 按命名规则挂上去 */
+    P.events = [];
+    if (byName['events.csv']) {
+      const { rows } = csvParse(dec.decode(byName['events.csv'].data));
+      P.events = rows.map((r, i) => ({
+        event_id: r.id !== undefined && r.id !== '' ? +r.id : i,
+        t_start_ms: +r.t_ms || 0,
+        t_end_ms: (+r.t_ms || 0) + (+r.duration_ms || 0),
+        peak: r.peak === '' ? null : +r.peak,
+        imu_label: r.final_label || r.auto_label || '',
+        truth_label: '', is_false_positive: '', confidence: '', note: '',
+        frames: []
+      }));
+    }
+
+    /* 帧图：按文件名归类 */
+    const evFrameRe = /^frames\/ev(\d+)_t(\d+)\.jpg$/;
+    const swFrameRe = /^frames\/sweep_t(\d+)\.jpg$/;
+    const sweepMeta = {};
+    if (byName['sweeps.csv']) {
+      const { rows } = csvParse(dec.decode(byName['sweeps.csv'].data));
+      rows.forEach(r => sweepMeta['sweep_t' + r.t_ms + '.jpg'] = r);
+    }
+
+    for (const e of entries) {
+      const m = e.name.match(evFrameRe);
+      if (m) {
+        const ev = P.events.find(x => x.event_id === +m[1]);
+        if (ev) ev.frames.push(urlOf(e));
+      }
+    }
+    for (const e of entries) {
+      const m = e.name.match(swFrameRe);
+      if (m) {
+        const t = +m[1], sm = sweepMeta['sweep_t' + t + '.jpg'] || {};
+        P.frames.push({
+          frame_id: 'sweep_t' + t,
+          t_ms: t, source: 'sweep',
+          vision_label: '', truth_label: '', severity: '', occlusion: '',
+          confidence: '', note: '', url: urlOf(e),
+          lat: sm.lat || '', lon: sm.lon || '', speed_kmh: sm.speed_kmh || ''
+        });
+      }
+    }
+    /* 事件帧同时也进「视觉帧」页签，因为两者都要标真值 */
+    for (const ev of P.events) {
+      ev.frames.forEach((u, k) => {
+        P.frames.push({
+          frame_id: 'ev' + ev.event_id + '_t' + Math.round(ev.t_start_ms) + '_' + k,
+          t_ms: ev.t_start_ms, source: 'event',
+          vision_label: '', truth_label: '', severity: '', occlusion: '',
+          confidence: '', note: '', url: u, lat: '', lon: ''
+        });
+      });
+    }
+
+    restoreProgress();
+    render();
+    $('whoCard').classList.remove('hidden');
+    $('workCard').classList.remove('hidden');
+    $('btnExport').disabled = false;
+
+    /* 空包或缺少关键内容时给出明确提示（真实采集包常常是空的） */
+    const warns = [];
+    if (!P.events.length && !P.frames.length) {
+      warns.push('这个采集包里<b>没有任何事件，也没有任何画面帧</b>。'
+        + '如果是真实采集，多半是速度门控把事件全拦下了、或摄像头未启用（看门控提示是否为 0）。'
+        + '空包无法标注——请先解决采集端问题再采一次。');
+    } else if (!P.frames.length) {
+      warns.push('包里有 ' + P.events.length + ' 个事件但<b>没有画面帧</b>，无法核对路面真实情况。'
+        + '标注时可以只看 IMU 波形信息，但建议下次采集开启摄像头。');
+    }
+    if (!(meta.collection && meta.collection.collected_by)) {
+      warns.push('包内 <b>meta.json 没有采集者信息</b>（collected_by 为空）。'
+        + '这是请对方在采集端填写后重采——采集者信息不可再生。');
+    }
+    if (warns.length) {
+      $('loadWarn').innerHTML = warns.join('<br><br>');
+      $('loadWarn').classList.remove('hidden');
+    }
+
+    $('hdrMeta').textContent = P.packId
+      + (meta.collection && meta.collection.collected_by ? ' · 采集者 ' + meta.collection.collected_by : '')
+      + ' · 事件 ' + P.events.length + ' · 帧 ' + P.frames.length;
+
+  } catch (err) {
+    $('loadErr').textContent = '解析失败：' + err.message;
+    $('loadErr').classList.remove('hidden');
+    $('workCard').classList.add('hidden');
+    $('whoCard').classList.add('hidden');
+  }
+}
+function urlOf(entry) {
+  const blob = new Blob([entry.data], { type: 'image/jpeg' });
+  const u = URL.createObjectURL(blob);
+  P.blobUrls.push(u);
+  return u;
+}
+function revokeUrls() { P.blobUrls.forEach(u => URL.revokeObjectURL(u)); P.blobUrls = []; }
+function packIdOf(fname, meta) {
+  let s = (fname || '').replace(/\.zip$/i, '');
+  s = s.replace(/^roadcheck_/, '');
+  if (meta && meta.collection && meta.collection.collected_by) {
+    s = s.replace(meta.collection.collected_by + '_', '');
+  }
+  return 'roadcheck_' + s;
+}
+
+/* ============ 进度本地保存（刷新不丢） ============ */
+function saveProgress() {
+  if (!P.packId) return;
+  try {
+    localStorage.setItem('rc_label_' + P.packId, JSON.stringify({
+      annotator: P.annotator,
+      events: P.events.map(e => ({ i: e.event_id, t: e.truth_label, f: e.is_false_positive, c: e.confidence, n: e.note })),
+      frames: P.frames.map(f => ({ i: f.frame_id, t: f.truth_label, s: f.severity, o: f.occlusion, c: f.confidence, n: f.note })),
+      at: nowIso()
+    }));
+    P.dirty = true;
+  } catch (e) {}
+}
+function restoreProgress() {
+  try {
+    const raw = localStorage.getItem('rc_label_' + P.packId);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.annotator) { P.annotator = s.annotator; $('annotator').value = s.annotator; }
+    (s.events || []).forEach(x => {
+      const e = P.events.find(v => v.event_id === x.i);
+      if (e) { e.truth_label = x.t || ''; e.is_false_positive = x.f || ''; e.confidence = x.c || ''; e.note = x.n || ''; }
+    });
+    (s.frames || []).forEach(x => {
+      const f = P.frames.find(v => v.frame_id === x.i);
+      if (f) { f.truth_label = x.t || ''; f.severity = x.s || ''; f.occlusion = x.o || ''; f.confidence = x.c || ''; f.note = x.n || ''; }
+    });
+  } catch (e) {}
+}
+
+/* ============ 渲染 ============ */
+function render() {
+  $('cntEv').textContent = '(' + P.events.filter(e => e.truth_label).length + '/' + P.events.length + ')';
+  $('cntFr').textContent = '(' + P.frames.filter(f => f.truth_label).length + '/' + P.frames.length + ')';
+  const dn = P.events.filter(e => e.truth_label).length + P.frames.filter(f => f.truth_label).length;
+  const tt = P.events.length + P.frames.length;
+  $('hdrProgress').textContent = tt ? '已标 ' + dn + ' / ' + tt : '';
+
+  renderEvList();
+  renderFrList();
+  renderEvDetail();
+  renderFrDetail();
+}
+
+function truthBtnsHtml(sel) {
+  return TRUTH_IMU.map((t, i) =>
+    '<button class="' + (sel === t ? 'on' : '') + '" data-t="' + t + '">'
+    + '<span class="k">' + (i + 1) + '</span> ' + t + '</button>').join('');
+}
+
+function renderEvList() {
+  const box = $('evListBox');
+  if (!P.events.length) { box.innerHTML = '<p class="sub">本包没有 IMU 事件。</p>'; return; }
+  let h = '<table class="tbl"><thead><tr><th>#</th><th>时刻</th><th>时长</th><th>峰值</th>'
+    + '<th>算法判定</th><th>真值</th><th>误报</th><th>把握</th></tr></thead><tbody>';
+  P.events.forEach(e => {
+    h += '<tr class="' + (P.selEv === e.event_id ? 'sel' : '') + '" data-i="' + e.event_id + '">'
+      + '<td>' + e.event_id + '</td>'
+      + '<td>' + (e.t_start_ms / 1000).toFixed(1) + 's</td>'
+      + '<td>' + (e.t_end_ms - e.t_start_ms) + 'ms</td>'
+      + '<td>' + (e.peak === null ? '—' : e.peak) + '</td>'
+      + '<td class="mono">' + (e.imu_label || '—') + '</td>'
+      + '<td>' + (e.truth_label
+          ? '<span class="badge b-done">' + e.truth_label + '</span>'
+          : '<span class="badge b-todo">待标</span>') + '</td>'
+      + '<td>' + (e.is_false_positive === '1' ? '<span class="badge b-fp">是</span>' : '') + '</td>'
+      + '<td>' + (e.confidence ? CONF_CN[e.confidence] : '') + '</td></tr>';
+  });
+  box.innerHTML = h + '</tbody></table>';
+  box.querySelectorAll('tr[data-i]').forEach(tr => {
+    tr.onclick = () => selectEv(+tr.dataset.i);
+  });
+}
+
+function renderEvDetail() {
+  const e = P.events.find(v => v.event_id === P.selEv);
+  const stage = $('stageEv'), film = $('filmEv');
+  if (!e) {
+    stage.innerHTML = '<div class="ph">从右侧列表选一个事件</div>';
+    film.innerHTML = ''; $('evPanel').classList.add('hidden');
+    $('evInfo').textContent = P.events.length ? '共 ' + P.events.length + ' 个事件待标注' : '本包没有事件';
+    return;
+  }
+  if (e.frames.length) {
+    stage.innerHTML = '<img src="' + e.frames[Math.min(2, e.frames.length - 1)] + '" alt="事件画面">';
+    film.innerHTML = e.frames.map((u, i) =>
+      '<img src="' + u + '" data-i="' + i + '" class="' + (i === Math.min(2, e.frames.length - 1) ? 'sel' : '') + '">').join('');
+    film.querySelectorAll('img').forEach(im => {
+      im.onclick = () => {
+        stage.innerHTML = '<img src="' + e.frames[+im.dataset.i] + '" alt="事件画面">';
+        film.querySelectorAll('img').forEach(x => x.classList.remove('sel'));
+        im.classList.add('sel');
+      };
+    });
+  } else {
+    stage.innerHTML = '<div class="ph">此事件没有画面帧<br><span style="font-size:12px;">只能依据 IMU 数值判断，把握程度建议选「低」</span></div>';
+    film.innerHTML = '';
+  }
+  $('evInfo').innerHTML = '<b>#' + e.event_id + '</b> · ' + (e.t_start_ms / 1000).toFixed(2) + 's 起 · 持续 '
+    + (e.t_end_ms - e.t_start_ms) + 'ms · 峰值 ' + (e.peak === null ? '—' : e.peak) + ' m/s²<br>'
+    + '算法判定：<span class="mono">' + (e.imu_label || '—') + '</span>（保留不改）';
+  $('evPanel').classList.remove('hidden');
+  $('truthBtns').innerHTML = truthBtnsHtml(e.truth_label);
+  $('truthBtns').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { e.truth_label = b.dataset.t; saveProgress(); render(); };
+  });
+  $('confBtns').innerHTML = CONF.map(c =>
+    '<button class="' + (e.confidence === c ? 'on' : '') + '" data-c="' + c + '">' + CONF_CN[c] + '</button>').join('');
+  $('confBtns').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { e.confidence = b.dataset.c; saveProgress(); render(); };
+  });
+  $('btnFP').className = 'sm' + (e.is_false_positive === '1' ? ' on' : '');
+  $('noteEv').value = e.note || '';
+}
+
+function renderFrList() {
+  const box = $('frListBox');
+  if (!P.frames.length) { box.innerHTML = '<p class="sub">本包没有画面帧。</p>'; return; }
+  let h = '<table class="tbl"><thead><tr><th>帧</th><th>时刻</th><th>来源</th>'
+    + '<th>真值</th><th>严重度</th><th>遮挡</th><th>把握</th></tr></thead><tbody>';
+  P.frames.forEach(f => {
+    h += '<tr class="' + (P.selFr === P.frames.indexOf(f) ? 'sel' : '') + '" data-x="' + P.frames.indexOf(f) + '">'
+      + '<td class="mono">' + f.frame_id + '</td>'
+      + '<td>' + (f.t_ms / 1000).toFixed(1) + 's</td>'
+      + '<td>' + (f.source === 'sweep' ? '周期扫描' : '事件帧') + '</td>'
+      + '<td>' + (f.truth_label
+          ? '<span class="badge b-done">' + f.truth_label + '</span>'
+          : '<span class="badge b-todo">待标</span>') + '</td>'
+      + '<td>' + (f.severity ? SEV_CN[f.severity] : '') + '</td>'
+      + '<td>' + (f.occlusion === '1' ? '<span class="badge b-fp">是</span>' : '') + '</td>'
+      + '<td>' + (f.confidence ? CONF_CN[f.confidence] : '') + '</td></tr>';
+  });
+  box.innerHTML = h + '</tbody></table>';
+  box.querySelectorAll('tr[data-x]').forEach(tr => {
+    tr.onclick = () => selectFr(+tr.dataset.x);
+  });
+}
+
+function renderFrDetail() {
+  const f = P.frames[P.selFr];
+  const stage = $('stageFr'), film = $('filmFr');
+  if (!f) {
+    stage.innerHTML = '<div class="ph">从右侧列表选一帧</div>';
+    film.innerHTML = ''; $('frPanel').classList.add('hidden');
+    $('frInfo').textContent = P.frames.length ? '共 ' + P.frames.length + ' 帧待标注' : '本包没有画面帧';
+    return;
+  }
+  stage.innerHTML = '<img src="' + f.url + '" alt="路面帧">';
+  /* 同一来源的相邻帧做缩略图条，方便前后对比 */
+  const sibs = P.frames.filter(x => x.source === f.source).slice(0, 60);
+  film.innerHTML = sibs.map(x => {
+    const gi = P.frames.indexOf(x);
+    return '<img src="' + x.url + '" data-x="' + gi + '" class="' + (gi === P.selFr ? 'sel' : '') + '">';
+  }).join('');
+  film.querySelectorAll('img').forEach(im => {
+    im.onclick = () => selectFr(+im.dataset.x);
+  });
+  $('frInfo').innerHTML = '<b>' + f.frame_id + '</b> · ' + (f.t_ms / 1000).toFixed(2) + 's · '
+    + (f.source === 'sweep' ? '周期扫描帧（裂缝的唯一来源）' : '事件帧')
+    + (f.speed_kmh ? ' · ' + f.speed_kmh + ' km/h' : '');
+  $('frPanel').classList.remove('hidden');
+  $('truthFrBtns').innerHTML = truthBtnsHtml(f.truth_label);
+  $('truthFrBtns').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { f.truth_label = b.dataset.t; saveProgress(); render(); };
+  });
+  $('sevBtns').innerHTML = SEVERITY.map(s =>
+    '<button class="' + (f.severity === s ? 'on' : '') + '" data-s="' + s + '">' + SEV_CN[s] + '<br><span class="k">' + s + '</span></button>').join('');
+  $('sevBtns').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { f.severity = b.dataset.s; saveProgress(); render(); };
+  });
+  $('confFrBtns').innerHTML = CONF.map(c =>
+    '<button class="' + (f.confidence === c ? 'on' : '') + '" data-c="' + c + '">' + CONF_CN[c] + '</button>').join('');
+  $('confFrBtns').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { f.confidence = b.dataset.c; saveProgress(); render(); };
+  });
+  $('btnOcc').className = 'sm' + (f.occlusion === '1' ? ' on' : '');
+  $('noteFr').value = f.note || '';
+}
+
+/* ============ 交互 ============ */
+function selectEv(i) { P.selEv = i; saveProgress(); render(); }
+function selectFr(i) { P.selFr = i; saveProgress(); render(); }
+
+$('tabEv').onclick = () => { P.tab = 'ev'; $('tabEv').classList.add('on'); $('tabFr').classList.remove('on');
+  $('paneEv').classList.remove('hidden'); $('paneFr').classList.add('hidden'); };
+$('tabFr').onclick = () => { P.tab = 'fr'; $('tabFr').classList.add('on'); $('tabEv').classList.remove('on');
+  $('paneFr').classList.remove('hidden'); $('paneEv').classList.add('hidden'); };
+
+$('btnFP').onclick = () => {
+  const e = P.events.find(v => v.event_id === P.selEv); if (!e) return;
+  e.is_false_positive = e.is_false_positive === '1' ? '0' : '1';
+  if (e.is_false_positive === '1' && !e.truth_label) e.truth_label = '平路';
+  saveProgress(); render();
+};
+$('btnOcc').onclick = () => {
+  const f = P.frames[P.selFr]; if (!f) return;
+  f.occlusion = f.occlusion === '1' ? '0' : '1';
+  if (f.occlusion === '1') { f.truth_label = '遮挡/无法判定'; f.confidence = 'low'; }
+  saveProgress(); render();
+};
+$('noteEv').oninput = () => {
+  const e = P.events.find(v => v.event_id === P.selEv); if (!e) return;
+  e.note = $('noteEv').value; saveProgress();
+};
+$('noteFr').oninput = () => {
+  const f = P.frames[P.selFr]; if (!f) return;
+  f.note = $('noteFr').value; saveProgress();
+};
+$('annotator').oninput = () => { P.annotator = $('annotator').value.trim(); saveProgress(); };
+
+document.addEventListener('keydown', ev => {
+  const tag = (ev.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  const k = ev.key;
+  const n = parseInt(k, 10);
+  if (n >= 1 && n <= 9) {
+    const t = TRUTH_IMU[n - 1]; if (!t) return;
+    if (P.tab === 'ev') { const e = P.events.find(v => v.event_id === P.selEv); if (e) { e.truth_label = t; saveProgress(); render(); } }
+    else { const f = P.frames[P.selFr]; if (f) { f.truth_label = t; saveProgress(); render(); } }
+    ev.preventDefault(); return;
+  }
+  const lower = k.toLowerCase();
+  if (lower === 'j' || lower === 'k') {
+    if (P.tab === 'ev') {
+      const i = P.events.findIndex(v => v.event_id === P.selEv);
+      const nx = lower === 'j' ? Math.min(i + 1, P.events.length - 1) : Math.max(i - 1, 0);
+      if (P.events[nx]) selectEv(P.events[nx].event_id);
+    } else {
+      const nx = lower === 'j' ? Math.min(P.selFr + 1, P.frames.length - 1) : Math.max(P.selFr - 1, 0);
+      selectFr(nx);
+    }
+    ev.preventDefault(); return;
+  }
+  if (lower === 'f') { $('btnFP').click(); ev.preventDefault(); return; }
+  if (lower === 'h' || lower === 'm' || lower === 'l') {
+    const c = { h: 'high', m: 'mid', l: 'low' }[lower];
+    if (P.tab === 'ev') { const e = P.events.find(v => v.event_id === P.selEv); if (e) { e.confidence = c; saveProgress(); render(); } }
+    else { const f = P.frames[P.selFr]; if (f) { f.confidence = c; saveProgress(); render(); } }
+    ev.preventDefault(); return;
+  }
+  if (k === 'ArrowRight' || k === 'ArrowLeft') {
+    const f = P.frames[P.selFr]; if (!f) return;
+    const nx = k === 'ArrowRight' ? Math.min(P.selFr + 1, P.frames.length - 1) : Math.max(P.selFr - 1, 0);
+    selectFr(nx); ev.preventDefault();
+  }
+});
+
+/* ============ 载入交互 ============ */
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => { if (e.target.files[0]) loadZip(e.target.files[0]); };
+['dragenter', 'dragover'].forEach(t => $('drop').addEventListener(t, e => {
+  e.preventDefault(); $('drop').classList.add('over');
+}));
+['dragleave', 'drop'].forEach(t => $('drop').addEventListener(t, e => {
+  e.preventDefault(); $('drop').classList.remove('over');
+}));
+$('drop').addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) loadZip(f);
+});
+
+/* ============ 导出 ============ */
+$('btnExport').onclick = () => {
+  if (!P.annotator) {
+    $('whoCard').scrollIntoView({ behavior: 'smooth' });
+    alert('请先填写标注者姓名 —— 它会写进导出文件的每一行。');
+    $('annotator').focus();
+    return;
+  }
+  const at = nowIso();
+  const who = P.annotator;
+
+  /* labels.csv：字段顺序严格对齐 labels/schema.md 2.1 */
+  const L = [['event_id','t_start_ms','t_end_ms','peak','imu_label','truth_label',
+              'is_false_positive','confidence','note','labeled_by','labeled_at']];
+  const doneE = P.events.filter(e => e.truth_label);
+  doneE.forEach(e => L.push([
+    e.event_id, e.t_start_ms, e.t_end_ms, e.peak === null ? '' : e.peak,
+    e.imu_label, e.truth_label,
+    e.is_false_positive === '' ? '0' : e.is_false_positive,
+    e.confidence || 'mid', e.note || '', who, at
+  ]));
+
+  /* frames.csv：字段顺序严格对齐 labels/schema.md 3.1 */
+  const F = [['frame_id','t_ms','source','vision_label','truth_label',
+              'severity','occlusion','confidence','note','labeled_by','labeled_at']];
+  const doneF = P.frames.filter(f => f.truth_label);
+  doneF.forEach(f => F.push([
+    f.frame_id, f.t_ms, f.source, f.vision_label || '',
+    f.truth_label, f.severity || 'light',
+    f.occlusion === '' ? '0' : f.occlusion,
+    f.confidence || 'mid', f.note || '', who, at
+  ]));
+
+  if (!doneE.length && !doneF.length) { alert('还没有任何标注内容。'); return; }
+
+  /* 文件名遵循规范 4 节：<pack_id>.labels.part-<标注者>.csv */
+  const safe = who.replace(/[^\w\u4e00-\u9fff-]/g, '') || 'anon';
+  dl(P.packId + '.labels.part-' + safe + '.csv', csvJoin(L));
+  if (doneF.length) dl(P.packId + '.frames.part-' + safe + '.csv', csvJoin(F));
+
+  const skippedE = P.events.length - doneE.length, skippedF = P.frames.length - doneF.length;
+  $('hdrProgress').textContent = '已导出 ' + doneE.length + ' 事件 + ' + doneF.length + ' 帧'
+    + (skippedE + skippedF ? '（跳过未标 ' + (skippedE + skippedF) + ' 条）' : '');
+};
+
+function dl(name, text) {
+  /* 加 BOM 让 Excel 直接识别为 UTF-8，避免中文乱码 */
+  const blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+</script>
+</body>
+</html>

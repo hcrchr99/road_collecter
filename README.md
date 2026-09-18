@@ -129,7 +129,8 @@ docs/                 项目文档（随站点一起发布，可访问 /docs/xxx
 tools/                团队协作工具（多人多 agent 场景）
   ├─ register_pack.py      采集包登记与状态跟踪（只记聚合统计，不含坐标）
   ├─ merge_labels.py       标注合并 / schema 校验 / 一致性 Kappa / 提交前防泄漏检查
-  └─ setup_shared_data.py  在共享盘上建约定的目录结构
+  ├─ setup_shared_data.py  在共享盘上建约定的目录结构
+  └─ label_tool.html       ★ 图形化标注工具（本地打开，无需环境）
 
 labels/               标注规范的唯一定义（标注数据本身不入库）
   ├─ schema.md          ★ 逐字段定义，任何人生成标注前必读
@@ -219,18 +220,43 @@ RHI     = 100 × exp(-density / 15)
 |---|---|---|
 | L1 | 代码、`reports/`、文档 | 本仓库（公开） |
 | L2 | `examples/` 合成演示数据 | 本仓库（公开） |
-| L3 | 真实采集包（含 GPS 轨迹） | **私有共享盘**，只在团队内 |
-| L4 | 标注集、黄金集 | **私有共享盘 + 版本化** |
+| L3 | 真实采集包（含 GPS 轨迹） | **项目资产 `road_check/raw/`** |
+| L4 | 标注集、黄金集 | **项目资产 `road_check/label/`、`golden/`** |
+
+> 采集包存放在**项目资产**（WorkBuddy 内置的项目文件中心），不是本仓库。
+> 实测体量：19.6 秒采集包 0.10 MB，推算 10 分钟骑行约 3 MB，团队采几十趟也在百 MB 量级，
+> 容量不构成约束。导出包文件名已带采集者，多人同时采集也不会混淆来源。
 
 三条实操约定：
 
-1. **采集包登记。** 每份采集包用 `tools/register_pack.py` 登记进 `labels/MANIFEST.csv`。
+1. **采集者信息随包落盘。** 采集端第 2 步会强制填写采集者（不填则「开始采集」按钮不可点），
+   值写入包内 `meta.json` 的 `collection.collected_by`。**这是不可再生的源数据元信息** ——
+   包一旦导出就无法反推是谁采的，所以必须在落盘时带上，不能事后补。
+2. **采集包登记。** 每份采集包用 `tools/register_pack.py` 登记进 `labels/MANIFEST.csv`。
    这张表只有聚合统计（时长、样本数、采样率、sha256），**不含任何坐标**，所以可以安全入库，
    让所有人一眼看到「团队现在有哪些数据、谁采的、标到哪一步」。
-2. **标注一人一档。** 绝不让两个 agent 往同一个标注文件里追加行，按 `pack_id` 切分文件。
+3. **标注一人一档。** 绝不让两个 agent 往同一个标注文件里追加行，按 `pack_id` 切分文件。
    标注字段定义见 `labels/schema.md`。
-3. **提交前自检。** 跑 `python tools/merge_labels.py --mode guard`，
-   它会检查有没有采集包、标注数据或密钥被误加进 Git 索引。
+
+### 怎么做标注
+
+用 `tools/label_tool.html` —— 浏览器直接打开，**不需要装任何环境**，全程在本机内存中解析，
+不上传数据：
+
+1. 把采集包 zip 拖进去（支持采集端导出的 STORE 模式 zip）
+2. 填标注者姓名
+3. 逐个事件 / 逐帧点真值标签（也支持键盘 `1`–`9` 快速打标）
+4. 点「导出标注」→ 得到符合 `labels/schema.md` 的 `labels.csv` 与 `frames.csv`
+
+导出的文件可直接被 `tools/merge_labels.py --mode validate` 接受，也能直接跑 Kappa：
+
+```bash
+python tools/merge_labels.py --mode validate --labels raw/*.labels.part-alice.csv
+python tools/merge_labels.py --mode kappa    --labels raw/*.part-alice.csv raw/*.part-bob.csv
+```
+
+**提交前自检。** 跑 `python tools/merge_labels.py --mode guard`，
+它会检查有没有采集包、标注数据或密钥被误加进 Git 索引。
 
 完整规则见 `docs/协作与数据共享规范.md`。
 

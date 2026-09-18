@@ -88,6 +88,15 @@
   .note{font-size:12.5px;color:var(--muted);background:#FAFAF8;border:1px solid var(--line);
     border-radius:10px;padding:12px 14px;margin-bottom:12px;}
   .note b{color:var(--text);}
+  .fields{display:grid;gap:10px;}
+  .fld{display:block;}
+  .fld .fk{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px;font-weight:500;}
+  .fld .req{color:var(--red);font-weight:600;font-size:11px;}
+  .fld .opt{color:var(--faint);font-size:11px;}
+  .fld input{width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;color:var(--text);
+    background:#FAFAF8;border:1px solid var(--line);border-radius:9px;padding:10px 12px;}
+  .fld input:focus{outline:none;border-color:var(--blue);background:var(--card);}
+  .fld input.missing{border-color:#F0C9C9;background:var(--red-bg);}
   ol{padding-left:20px;margin:6px 0 0;font-size:13px;color:var(--muted);}
   ol li{margin-bottom:3px;}
   .hidden{display:none;}
@@ -122,6 +131,25 @@
   </div>
 
   <div class="card">
+    <h2><span class="step" id="s2b">2</span>采集者信息</h2>
+    <p class="sub" style="margin:0 0 10px;">
+      这两项会写进数据包的 <b>meta.json</b>。<b>采集者信息不可再生</b>——包一旦导出就无法反推是谁在什么路段采的，
+      请务必在出发前填好。它是团队多人协作时区分数据来源的唯一依据。
+    </p>
+    <div class="fields">
+      <label class="fld">
+        <span class="fk">采集者 <b class="req">必填</b></span>
+        <input type="text" id="fCollector" placeholder="姓名或代号，如：张三 / zs" maxlength="32" autocomplete="off">
+      </label>
+      <label class="fld">
+        <span class="fk">路段备注 <span class="opt">选填</span></span>
+        <input type="text" id="fRoute" placeholder="如：校园东路—图书馆段，柏油路面" maxlength="80" autocomplete="off">
+      </label>
+    </div>
+    <p class="sub" style="margin:10px 0 0;font-size:12px;" id="collectorHint"></p>
+  </div>
+
+  <div class="card">
     <h2><span class="step" id="s3">3</span>正式采集</h2>
     <div class="note" style="margin-bottom:10px;">
       <b>出发前请确认</b>
@@ -129,6 +157,7 @@
         <li>手机用支架<b>固定</b>在车把/车架上，不要放口袋</li>
         <li>摄像头朝向<b>前方路面</b>（略微下俯效果最好）——视觉帧是后面自动标注的依据</li>
         <li>骑行中<b>不需要</b>点屏幕打标，终点结束后统一回看标定</li>
+        <li>上方<b>采集者信息已填写</b>——未填时按钮不可点</li>
       </ol>
     </div>
     <div id="ctrl"><button class="primary" id="btnStart" disabled>开始采集</button></div>
@@ -215,6 +244,8 @@ const S = {
   stream: null, frameTimer: null, sweepTimer: null, ring: [], sweeps: [],
   trial: null,
   mode: 'ride',        // 'ride' | 'test'
+  collector: '',       // 采集者姓名/代号（必填，写入 meta.json，不可再生）
+  route: '',           // 路段备注（选填）
   gateBlocked: 0,      // 被速度门控拦下的候选事件段数
   blockEp: false,      // 是否正处于"超门限但被门控拦下"的连续段
   spdMax: 0, spdUsable: false
@@ -239,6 +270,59 @@ function showErr(title, detail) {
   e.style.display = 'block';
 }
 function clearErr() { $('err').style.display = 'none'; }
+
+/* ---- 采集者信息：必填字段的门控 ----
+   btnStart 的 disabled 由「传感器授权通过」与「采集者已填写」两个条件共同决定。
+   两处分别直接赋值会互相覆盖，所以统一走 refreshStartBtn()。 */
+let sensorReady = false;
+
+function collectorFilled() { return !!(S.collector && S.collector.trim()); }
+
+function refreshStartBtn() {
+  const btn = $('btnStart');
+  if (!btn) return;
+  const ok = sensorReady && collectorFilled();
+  btn.disabled = !ok;
+  btn.textContent = '开始采集';
+  $('ctrl').innerHTML = '<button class="primary" id="btnStart"' + (ok ? '' : ' disabled') + '>开始采集</button>';
+  $('btnStart').onclick = start;
+
+  const hint = $('collectorHint');
+  const fld = $('fCollector');
+  if (!collectorFilled()) {
+    if (hint) { hint.textContent = sensorReady ? '请填写采集者后才能开始采集。' : '填写后，完成上方传感器授权即可开始。'; }
+    if (fld) fld.classList.add('missing');
+  } else {
+    if (hint) {
+      hint.innerHTML = '已登记：<b>' + S.collector.replace(/[<>&]/g, '') + '</b>'
+        + (S.route ? ' · ' + S.route.replace(/[<>&]/g, '') : '')
+        + (sensorReady ? ' —— 可以开始采集了。' : ' —— 还需完成上方传感器授权。');
+    }
+    if (fld) fld.classList.remove('missing');
+  }
+}
+
+function bindCollectorFields() {
+  const fc = $('fCollector'), fr = $('fRoute');
+  try {
+    const saved = JSON.parse(localStorage.getItem('roadcheck_collector') || 'null');
+    if (saved) { S.collector = saved.by || ''; S.route = saved.route || ''; }
+  } catch (e) {}
+  if (fc) fc.value = S.collector || '';
+  if (fr) fr.value = S.route || '';
+
+  const sync = () => {
+    S.collector = (fc && fc.value || '').trim();
+    S.route = (fr && fr.value || '').trim();
+    try {
+      localStorage.setItem('roadcheck_collector', JSON.stringify({ by: S.collector, route: S.route }));
+    } catch (e) {}
+    refreshStartBtn();
+  };
+  if (fc) fc.oninput = sync;
+  if (fr) fr.oninput = sync;
+  refreshStartBtn();
+}
 
 /* ============================ 1. 环境自检 ============================ */
 async function probe() {
@@ -394,13 +478,15 @@ async function authorize() {
         '4 秒内没有收到任何传感器数据。原因通常是：① 本页不是 HTTPS；② iOS 未授权运动与方向；' +
         '③ 浏览器「运动传感器」权限被关闭。请按提示处理后重新点击授权。</span></div>';
       showErr('传感器无数据', '授权看似通过，但实际收不到数据。请逐项核对上方自检结果，尤其是「安全上下文」是否为「是」。');
-      $('btnStart').disabled = true;
+      sensorReady = false;
+      refreshStartBtn();
     } else {
       verdict = '<div class="chk"><span class="mk ok">✓</span><span class="lb">试采结果</span><span class="vl ok">' +
         '收到 ' + got + ' 个样本，实测采样率约 ' + hz.toFixed(0) + ' Hz' +
         (hz > 0 && hz < 25 ? '（偏低，可能是省电模式，建议关闭后重试）' : '') + '</span></div>';
-      $('btnStart').disabled = false;
+      sensorReady = true;
       $('s2').className = 'step done';
+      refreshStartBtn();
     }
 
     lines[lines.length - 1] = verdict;
@@ -841,7 +927,7 @@ function sweepCsv() {
 function metaObj() {
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
   return {
-    version: '0.2', exported_at: new Date().toISOString(),
+    version: '0.3', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
     sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
@@ -852,6 +938,11 @@ function metaObj() {
     labels_available: ['坑洼', '减速带', '井盖', '粗糙路面', '误报'],
     labelled_events: S.events.filter(e => e.manual).length,
     collection: {
+      collected_by: S.collector || null,
+      collected_by_note: S.collector
+        ? '采集者自填，用于团队多人协作时区分数据来源'
+        : '⚠ 未填写采集者。此字段不可再生，请勿在缺失状态下长期留存该数据包',
+      route_note: S.route || null,
       mode: S.mode === 'test' ? 'handheld_test' : 'ride',
       mode_note: S.mode === 'test'
         ? '手持/静止测试：速度门控已关闭，速度读数无意义'
@@ -975,8 +1066,10 @@ function exportZip() {
     files.push({ name: 'frames/sweep_t' + s.t + '.jpg', data: b64ToU8(s.url) });
     nSw++;
   }
-  download('roadcheck_' + stamp() + '.zip', makeZip(files));
-  $('zipHint').textContent = '已导出：样本 ' + S.samples.length + ' 条、事件 ' + S.events.length +
+  // 文件名带采集者：多份包落在同一个下载目录时不会混淆来源
+  const who = (S.collector || '').replace(/[^\w\u4e00-\u9fff-]/g, '');
+  download('roadcheck_' + (who ? who + '_' : '') + stamp() + '.zip', makeZip(files));
+  $('zipHint').textContent = '已导出：采集者 ' + (S.collector || '未填') + '、样本 ' + S.samples.length + ' 条、事件 ' + S.events.length +
     ' 个（画面 ' + nEv + ' 帧）、周期扫描 ' + nSw + ' 帧。周期扫描帧是视觉识别裂缝的唯一来源，务必保留。';
 }
 
@@ -991,7 +1084,6 @@ document.querySelectorAll('input[name=mode]').forEach(r => {
 });
 
 $('btnAuth').onclick = authorize;
-$('btnStart').onclick = start;
 $('btnZip').onclick = exportZip;
 $('btnJson').onclick = () => download('roadcheck_' + stamp() + '.json',
   new Blob([JSON.stringify({ meta: metaObj(), samples: S.samples, events: S.events.map(e => ({ ...e, frames: undefined })) }, null, 2)],
@@ -1015,6 +1107,7 @@ $('btnReset').onclick = () => {
 
 S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
 $('modeHint').textContent = '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+bindCollectorFields();
 probe();
 </script>
 </body>
