@@ -18,6 +18,20 @@ collect_packs/
 pack_inspect.txt
 user_pipeline.txt
 
+# ---- 标注数据：入库的只有 schema 与登记表 ----
+# labels/schema.md     逐字段定义，必须入库（团队唯一真源）
+# labels/MANIFEST.csv  采集包登记表，只有聚合统计、无坐标，入库便于全员查「有哪些数据」
+# 其余标注文件与黄金集含真实帧与坐标，只走私有通道。
+#
+# 注意 Git 规则是「最后一个匹配生效」，所以例外必须写在最后：
+#   labels/**/*.csv 会连零级目录一起匹配，若把它放在 !labels/MANIFEST.csv 之后，
+#   例外就会被重新忽略掉。改完务必用 `git check-ignore -v <路径>` 验证（规范 9.1 节）。
+labels/**/*.csv
+labels/**/*.json
+golden/
+!labels/MANIFEST.csv
+!labels/schema.md
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
