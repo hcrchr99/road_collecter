@@ -8,12 +8,21 @@
   结束事件条件 = smooth < 门限 × 0.5（至少 60 ms）  或  持续超过 3000 ms
 """
 import json
+import os
+import sys
 import zipfile
 
 import numpy as np
 import pandas as pd
 
-SRC = r"C:\Users\Admin\Downloads\roadcheck_20260918_2127.zip"
+# Windows 上重定向 stdout 到文件时默认走 GBK(cp936)，会把中文报告写成乱码。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# 采集包路径：优先取命令行第一个参数，其次环境变量，最后回退到默认路径。
+SRC = (sys.argv[1] if len(sys.argv) > 1
+       else os.environ.get("ROADCHECK_ZIP", r"C:\Users\Admin\Downloads\roadcheck_20260918_2127.zip"))
 
 # 与 collector.html 的 CFG 完全一致
 TAU_SMOOTH = 0.010

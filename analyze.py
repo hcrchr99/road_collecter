@@ -29,6 +29,13 @@ import numpy as np
 import pandas as pd
 from scipy import signal as sps
 
+# Windows 上重定向 stdout 到文件时默认走 GBK(cp936)，会把中文报告写成乱码。
+# 这里强制 stdout/stderr 使用 UTF-8，保证 `python analyze.py --selftest > report.txt`
+# 产出的报告在任何平台上都是可读的 UTF-8。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ---------------------------------------------------------------- 配置
 FS_TARGET = 100.0          # 统一重采样频率（文献常用；采集端约 60 Hz）
 BANDPASS = (1.0, 20.0)     # 路面激励主频段 Hz

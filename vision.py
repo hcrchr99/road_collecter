@@ -26,6 +26,12 @@ import sys
 import zipfile
 from collections import Counter
 
+# Windows 上重定向 stdout 到文件时默认走 GBK(cp936)，会把中文报告写成乱码。
+# 强制 UTF-8，保证 `python vision.py --selftest > report.txt` 产出可读报告。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import cv2
 import numpy as np
 

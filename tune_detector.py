@@ -14,11 +14,18 @@
     python tune_detector.py
 """
 
+import sys
+
 import numpy as np
 import pandas as pd
 from scipy import signal as sps
 
 from analyze import synth
+
+# Windows 上重定向 stdout 到文件时默认走 GBK(cp936)，会把中文报告写成乱码。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 FS = 100.0
 MIN_GAP_S = 0.30

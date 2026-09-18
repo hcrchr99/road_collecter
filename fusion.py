@@ -29,6 +29,12 @@ import os
 import sys
 from collections import Counter
 
+# Windows 上重定向 stdout 到文件时默认走 GBK(cp936)，会把中文报告写成乱码。
+# 强制 UTF-8，保证 `python fusion.py --selftest > report.txt` 产出可读报告。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 本项目要识别的路面病害/设施全集
 UNIVERSE = ["坑洼", "减速带", "井盖", "粗糙路面", "纵向裂缝", "横向裂缝", "龟裂"]
 
