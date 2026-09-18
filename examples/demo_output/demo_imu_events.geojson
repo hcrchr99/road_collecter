@@ -1,0 +1,176 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4737568,
+          31.2305582
+        ]
+      },
+      "properties": {
+        "cluster": 0,
+        "type": "坑洼",
+        "confirmations": 1,
+        "max_peak": 10.47,
+        "mean_duration": 0.08,
+        "severity_score": 35,
+        "maintenance_priority": "高"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4739835,
+          31.2311892
+        ]
+      },
+      "properties": {
+        "cluster": 1,
+        "type": "减速带",
+        "confirmations": 1,
+        "max_peak": 5.25,
+        "mean_duration": 0.51,
+        "severity_score": 70,
+        "maintenance_priority": "低"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4742044,
+          31.2318042
+        ]
+      },
+      "properties": {
+        "cluster": 2,
+        "type": "井盖",
+        "confirmations": 1,
+        "max_peak": 9.1,
+        "mean_duration": 0.08,
+        "severity_score": 65,
+        "maintenance_priority": "中"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4744276,
+          31.2324254
+        ]
+      },
+      "properties": {
+        "cluster": 3,
+        "type": "坑洼",
+        "confirmations": 1,
+        "max_peak": 10.45,
+        "mean_duration": 0.08,
+        "severity_score": 35,
+        "maintenance_priority": "高"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4746539,
+          31.2330555
+        ]
+      },
+      "properties": {
+        "cluster": 4,
+        "type": "减速带",
+        "confirmations": 1,
+        "max_peak": 5.51,
+        "mean_duration": 0.47,
+        "severity_score": 70,
+        "maintenance_priority": "低"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4748748,
+          31.2336705
+        ]
+      },
+      "properties": {
+        "cluster": 5,
+        "type": "井盖",
+        "confirmations": 1,
+        "max_peak": 9.48,
+        "mean_duration": 0.08,
+        "severity_score": 65,
+        "maintenance_priority": "中"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4750982,
+          31.2342922
+        ]
+      },
+      "properties": {
+        "cluster": 6,
+        "type": "坑洼",
+        "confirmations": 1,
+        "max_peak": 10.83,
+        "mean_duration": 0.08,
+        "severity_score": 35,
+        "maintenance_priority": "高"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4753243,
+          31.2349217
+        ]
+      },
+      "properties": {
+        "cluster": 7,
+        "type": "减速带",
+        "confirmations": 1,
+        "max_peak": 5.63,
+        "mean_duration": 0.49,
+        "severity_score": 70,
+        "maintenance_priority": "低"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4755456,
+          31.2355378
+        ]
+      },
+      "properties": {
+        "cluster": 8,
+        "type": "井盖",
+        "confirmations": 1,
+        "max_peak": 9.28,
+        "mean_duration": 0.08,
+        "severity_score": 65,
+        "maintenance_priority": "中"
+      }
+    }
+  ]
+}

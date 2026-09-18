@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>路面体检 v0.2 · 视觉融合与采集端修复</title>
+<style>
+  :root{
+    --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
+    --blue:#185FA5; --blue-bg:#E6F1FB; --green:#3B6D11; --green-bg:#EAF3DE;
+    --amber:#854F0B; --amber-bg:#FAEEDA; --red:#A32D2D; --red-bg:#FCEBEB;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:48px 24px 80px;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.75;}
+  .wrap{max-width:920px;margin:0 auto;}
+  .eyebrow{font-size:13px;color:var(--faint);letter-spacing:.06em;margin:0 0 10px;}
+  h1{font-size:27px;font-weight:600;line-height:1.35;margin:0 0 12px;letter-spacing:-.01em;}
+  .lede{font-size:15px;color:var(--muted);margin:0 0 32px;max-width:720px;}
+  h2{font-size:17px;font-weight:600;margin:48px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  h3{font-size:15px;font-weight:600;margin:0 0 6px;}
+  p{margin:0 0 12px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:14px;}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#F1EFE8;padding:1px 5px;border-radius:4px;}
+  pre{background:#FAFAF8;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;
+    font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.65;margin:0 0 12px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);}
+  th{background:#FAFAF8;text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);
+    padding:11px 13px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  td{padding:11px 13px;border-bottom:1px solid #F0EFEB;vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  .tbl-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+  .scroll{overflow-x:auto;}
+  .notice{border-radius:10px;padding:16px 20px;margin:0 0 16px;border:1px solid;}
+  .notice.danger{background:var(--red-bg);border-color:#F0C9C9;}
+  .notice.good{background:var(--green-bg);border-color:#CFE2B4;}
+  .notice.info{background:var(--blue-bg);border-color:#C3DDF5;}
+  .notice.warn{background:var(--amber-bg);border-color:#EFD9AE;}
+  .notice strong{display:block;margin-bottom:5px;}
+  .notice.danger strong{color:var(--red);} .notice.good strong{color:var(--green);}
+  .notice.info strong{color:var(--blue);} .notice.warn strong{color:var(--amber);}
+  ul,ol{padding-left:20px;margin:6px 0 12px;}
+  li{margin-bottom:5px;}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+  .kpi div{background:var(--card);padding:14px 16px;}
+  .kpi .k{font-size:11.5px;color:var(--faint);margin:0 0 3px;}
+  .kpi .v{font-size:16px;font-weight:600;margin:0;font-variant-numeric:tabular-nums;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px;}
+  .flow-row{display:flex;align-items:flex-start;gap:12px;padding:9px 0;border-bottom:1px dashed #EDECE7;font-size:14px;}
+  .flow-row:last-child{border-bottom:none;}
+  .flow-row .n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--blue-bg);color:var(--blue);
+    font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:3px;}
+  .flow-row .t{font-weight:600;flex:none;width:150px;}
+  .flow-row .d{color:var(--muted);font-size:13.5px;flex:1;}
+  .tag{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;margin-right:6px;}
+  .tag.fix{background:var(--green-bg);color:var(--green);}
+  .tag.bug{background:var(--red-bg);color:var(--red);}
+  .tag.new{background:var(--blue-bg);color:var(--blue);}
+  .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);}
+  @media (max-width:640px){.grid2{grid-template-columns:1fr;}body{padding:32px 16px 64px;}h1{font-size:22px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">路面体检 · v0.2 · 针对你提出的三个问题</p>
+  <h1>视觉融合、权限修复与自动标注</h1>
+  <p class="lede">三个问题里有内在关联：第 1 个（视觉）和第 3 个（标定）其实是同一个解法的两面——让视觉去做标注，人只做确认。第 2 个是我的实现缺陷，已定位并修好。本文替代 <code>项目启动方案.html</code> 中对应的采集流程与排期部分。</p>
+
+  <h2>一、结论摘要</h2>
+  <div class="kpi">
+    <div><p class="k">病害类型覆盖</p><p class="v">4/7 → 7/7</p></div>
+    <div><p class="k">视觉后端</p><p class="v">2 个可切换</p></div>
+    <div><p class="k">融合规则</p><p class="v">15 条</p></div>
+    <div><p class="k">端到端实测</p><p class="v">全部通过</p></div>
+  </div>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>你提的问题</th><th>性质</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>想结合视觉方案</b></td>
+        <td><span class="tag new">设计扩展</span></td>
+        <td>IMU + 视觉双模态。视觉用两个可切换后端：经典 CV 基线（只需 OpenCV，立刻能跑）与 YOLO 检测器（在 RDD2022 上微调，装了 ultralytics 自动启用）。融合后病害类型覆盖从单模态最高 6/7 提升到 <b>7/7</b></td>
+      </tr>
+      <tr>
+        <td><b>网页不自动请求权限，一直提示定位不可用</b></td>
+        <td><span class="tag bug">我的实现缺陷</span></td>
+        <td>三个原因：① 我在 <code>await</code> 完传感器授权之后才发起定位请求，此时用户手势已被消耗，浏览器会抑制定位弹窗；② 用 <code>file://</code> 或非 HTTPS 打开时浏览器直接拒绝；③ 之前点过"拒绝"后浏览器不再弹窗。已改为三步式流程并加诊断面板与看门狗</td>
+      </tr>
+      <tr>
+        <td><b>过井盖只有一瞬间，来不及精准标定</b></td>
+        <td><span class="tag new">交互设计问题</span></td>
+        <td>解法不是"标得更准"，而是<b>不用实时标</b>：自动抓帧 → 结束后带缩略图回看确认 → 最终由视觉自动标注，人工只抽检。人工介入从"骑行中 N 次盲点"降到"结束后 1 次复核"</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>二、问题二：为什么一直显示"定位不可用"</h2>
+  <div class="notice danger">
+    <strong>这是 v0.1 的真实 bug，不是你的操作问题</strong>
+    原代码在授权函数里先 <code>await DeviceMotionEvent.requestPermission()</code>，然后才调用 <code>navigator.geolocation.watchPosition()</code>。浏览器要求权限弹窗必须在用户手势的**同一次任务**里发起，<code>await</code> 之后手势已失效，定位弹窗被静默抑制——于是只有一个语焉不详的"定位不可用"。
+  </div>
+
+  <h3>三个真实原因（按可能性排序）</h3>
+  <ol>
+    <li><b>非安全上下文。</b>直接用 <code>file://</code> 双击打开 HTML 时，Chrome 会拒绝定位；<code>http://</code> 的非 localhost 地址同样被拒。这是最常见的。</li>
+    <li><b>授权顺序错误。</b>上面说的 <code>await</code> 消耗手势问题。</li>
+    <li><b>权限已被拒绝过。</b>浏览器对你点过的"拒绝"有记忆，不会再次弹窗，只能手动到站点设置里改回允许。</li>
+  </ol>
+
+  <h3>v0.2 的修复内容</h3>
+  <ul>
+    <li><b>三步式流程</b>：环境自检 → 授权并试采 → 正式采集。未通过试采前，"开始采集"按钮保持禁用，不会让你白跑一趟。</li>
+    <li><b>环境自检面板</b>：逐项显示安全上下文（含当前协议）、运动传感器 API、授权方式（iOS 需主动请求 / Android 由浏览器设置控制）、定位与摄像头 API 可用性、以及能查到的权限状态（Safari 不支持查询时会如实标注）。</li>
+    <li><b>授权顺序修正</b>：在点击的同一任务里<b>先同步发起</b> <code>getCurrentPosition</code>（触发定位弹窗），再 <code>await</code> 传感器授权。两者共用同一个用户手势。</li>
+    <li><b>错误码翻译成可操作指引</b>：<code>PERMISSION_DENIED</code> → 告诉你去哪改回允许；<code>POSITION_UNAVAILABLE</code> → 系统定位服务未开或室内无信号；<code>TIMEOUT</code> → 到室外、关省电模式。</li>
+    <li><b>4 秒试采</b>：真的采一段数据并报出实测采样率。低于 25 Hz 会提示可能是省电模式。</li>
+    <li><b>8 秒看门狗</b>：Android 上传感器被拒时<b>不会报错</b>，只是没有数据。看门狗负责把这种静默失败变成明确提示。</li>
+    <li><b>可重复授权</b>：授权按钮变为"重新授权 / 重新试采"，试采失败可随时重来。</li>
+  </ul>
+  <div class="notice warn">
+    <strong>你需要做的唯一一件事</strong>
+    把 <code>collector.html</code> 部署到 HTTPS 地址（Vercel 或 Cloudflare Pages，免费且几分钟完成），再从手机浏览器打开。本地双击文件打开是无法拿到权限的。
+  </div>
+
+  <h2>三、问题三：标定问题，以及为什么"换思路"比"标得更准"更对</h2>
+  <p>你指出的问题很实在：井盖经过只有一瞬间，屏幕上还要看着路，盲点按钮大概率点不到、点错。任何试图提高"实时点击精度"的方案都有天花板。所以 v0.2 把标定从实时改成了确认式。</p>
+
+  <div class="flow">
+    <div class="flow-row"><span class="n">1</span><span class="t">自动抓帧（骑行中零操作）</span><span class="d">摄像头以 10 fps 存入一个 2.4 秒的环形缓冲。IMU 检出事件时，立刻从缓冲里取出该事件前后共约 1.6 秒的画面存下来——<b>事件发生前的画面也留住了</b>，因为检测本身有几十毫秒延迟。</span></div>
+    <div class="flow-row"><span class="n">2</span><span class="t">结束后的回看标定</span><span class="d">每条事件带 6 帧缩略图，看着图点标签。井盖、坑洼、减速带在图上清晰可辨，准确率与"骑行中盲点"完全不是一个量级。</span></div>
+    <div class="flow-row"><span class="n">3</span><span class="t">「误报」也是宝贵标签</span><span class="d">专设一个「误报」按钮。人体晃动、车辆振动造成的假事件被显式标出来后，就是降低误报的负样本——这比多标 10 个正样本更有价值。</span></div>
+    <div class="flow-row"><span class="n">4</span><span class="t">最终由视觉自动标注</span><span class="d">这才是根本解法：视觉模型逐帧判定路面状态，自动给每个事件贴上类型标签。人工只需要抽检少量结果做质量把关，不再需要逐条标定。</span></div>
+  </div>
+
+  <p><b>为什么人工标注仍然要保留：</b>它有两个不可替代的作用——① 提供真实数据上的标定基准（视觉基线的阈值必须在真数据上重标）；② 产出「误报」负样本。但从工作量上说，它已经从"每骑行 1 分钟就要操作 1 次"降到"每趟骑行后花几分钟复核"。</p>
+
+  <h2>四、问题一：视觉融合方案</h2>
+
+  <h3>4.1 为什么两个模态不是重复的</h3>
+  <p>这是整个方案最需要讲清楚的一点，也是方案文档里的核心技术叙事：</p>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>模态</th><th>它感知的物理量</th><th>能识别的病害</th><th>原理上的盲区</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>IMU</b></td>
+        <td>垂直方向的颠簸幅度与波形形态，本质上是<b>深度与结构</b></td>
+        <td>坑洼、减速带、井盖、粗糙路面</td>
+        <td><b>抓不到不引起颠簸的病害</b>：纵向裂缝、横向裂缝、龟裂、浅层修补。而这些在真实路面上占比极高——RDD2022 里裂缝类标注数量远超坑洼</td>
+      </tr>
+      <tr>
+        <td><b>视觉</b></td>
+        <td>路面的表面纹理与明暗结构，本质上是<b>类型与形态</b></td>
+        <td>坑洼、裂缝（可细分为纵向/横向/龟裂）、粗糙路面、井盖</td>
+        <td>单目图像<b>无法可靠估计深度</b>——看不出坑有多深；且受夜间、逆光、积水反光影响</td>
+      </tr>
+      <tr>
+        <td><b>融合</b></td>
+        <td>深度 + 类型两个正交维度</td>
+        <td colspan="2">病害类型覆盖 <b>7/7</b>；坑洼的置信度从单模态 0.70 提升到 0.95（双模态互证）</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>反过来也一样：井盖和减速带在图像上就是一块区域，靠纹理很难与坑洼区分，但它们的颠簸特征是结构性凸起——<b>IMU 恰好能判断"这是凸起而不是凹陷"</b>。这就是融合决策表里 R5 规则的价值。</p>
+
+  <div class="notice info">
+    <strong>一个必须做对的架构决定：周期扫描帧</strong>
+    如果只在 IMU 检出事件时才抓帧，那么裂缝永远不会被拍到——因为它不引起颠簸，压根不会触发抓帧。这样视觉就永远只能给 IMU 已发现的事件贴标签，贡献不了任何<b>新</b>的病害。所以 v0.2 增加了<b>每 2 秒一次的独立扫描抓帧</b>，与事件无关。扫描帧里发现的病害会成为"视觉独有"记录，这才是视觉真正的增量价值。
+  </div>
+
+  <h3>4.2 两个视觉后端</h3>
+  <div class="grid2">
+    <div class="card" style="margin:0;">
+      <span class="tag fix">默认可用</span>
+      <h3>经典 CV 基线</h3>
+      <p style="font-size:14px;color:var(--muted);margin:0;">只需要 OpenCV，零模型依赖，装上就能跑。特征全部有明确物理含义：</p>
+      <ul style="font-size:13.5px;color:var(--muted);margin-bottom:0;">
+        <li><b>光照归一化</b>：用大尺度高斯估背景，再做相对亮度比较，抗光照变化</li>
+        <li><b>坑洼</b>：比周围暗 15% 以上的大块连通域（面积 + 细长比）</li>
+        <li><b>裂缝</b>：黑帽运算提取细长暗结构，看连通域的细长比与方向</li>
+        <li><b>粗糙路面</b>：归一化灰度标准差</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0;">
+      <span class="tag new">装了即启用</span>
+      <h3>YOLO 检测器（RDD2022）</h3>
+      <p style="font-size:14px;color:var(--muted);margin:0;">用 <code>pip install ultralytics</code> 后在 RDD2022 上微调，加 <code>--weights</code> 即自动切换。</p>
+      <ul style="font-size:13.5px;color:var(--muted);margin-bottom:0;">
+        <li>RDD2022：47,420 张路面图，6 国采集，四类标注 D00 纵向裂缝 / D10 横向裂缝 / D20 龟裂 / D40 坑洼</li>
+        <li><b>有中国子集，且是摩托车与无人机视角</b>：China Motor 1,977 训练图 / 4,650 标注；China Drone 2,401 图 / 3,068 标注 —— 与你的采集场景一致</li>
+        <li>Hugging Face 上有现成的 YOLO 格式镜像（4 类，26,869 / 5,758 / 5,758 划分）</li>
+        <li>注意：D40 坑洼是样本最少的类别（类别不平衡），要在方案里如实说明</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:14px;"><b>一条可以直接写进方案的论据：</b>RDD2022 论文明确指出，在某一国数据上训练的模型换到另一国数据上表现会显著下降。这正好论证了"通用预训练 + 本地自采数据微调"的两阶段路线是必要的，而不是可选的。</p>
+
+  <h3>4.3 融合决策表（15 条规则，摘录关键几条）</h3>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>规则</th><th>IMU</th><th>视觉</th><th>结论</th><th>置信度</th><th>依据</th></tr></thead>
+    <tbody>
+      <tr><td>R7</td><td>冲击型</td><td>坑洼</td><td><b>坑洼</b></td><td>0.95</td><td>双模态互证，最高置信</td></tr>
+      <tr><td>R5</td><td>冲击型</td><td>平路</td><td>井盖 / 减速带</td><td>0.70</td><td>有冲击但表面完好 → 结构性凸起，不是坑洞。<b>单靠 IMU 会误判为坑洼</b></td></tr>
+      <tr><td>R6</td><td>持续型</td><td>平路</td><td>保留 IMU 结论</td><td>0.65</td><td>搓板路 / 沉陷</td></tr>
+      <tr><td>R1</td><td>无事件</td><td>裂缝</td><td><b>裂缝</b></td><td>0.73</td><td><b>视觉独有能力</b>：裂缝不引起颠簸，IMU 原理上抓不到</td></tr>
+      <tr><td>R9</td><td>冲击型</td><td>裂缝</td><td>裂缝（含局部沉降）</td><td>0.65</td><td>复合病害，养护优先级应提高</td></tr>
+      <tr><td>R3</td><td>无事件</td><td>坑洼</td><td>疑似浅坑</td><td>0.40</td><td>视觉见凹陷但无颠簸 → 浅坑、积水覆盖，或时间对齐偏差。低置信，建议复采</td></tr>
+      <tr><td>R15</td><td>—</td><td>扫描帧病害</td><td>重复观测（归并）</td><td>—</td><td>同一处病害既触发 IMU 又被扫描帧看到，按 20 m 半径去重，<b>避免重复计数夸大病密度</b></td></tr>
+      <tr><td>R0</td><td>人工标为误报</td><td>—</td><td>剔除</td><td>0.90</td><td>人工负样本直接生效</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>置信度的设计有意保持单调：<b>双模态互证 0.95 &gt; 单模态推断 0.70 &gt; 单模态孤证 0.40</b>。自检里对这个单调性做了断言，避免以后改规则时把它破坏掉。</p>
+
+  <h3>4.4 端到端实测结果</h3>
+  <p>用 <code>make_demo_zip.py</code> 生成的演示包含 12,000 个采样点、9 个 IMU 事件、59 张扫描帧，跑完整条链路：</p>
+  <div class="kpi">
+    <div><p class="k">IMU 事件</p><p class="v">9</p></div>
+    <div><p class="k">双模态互证</p><p class="v">3 处</p></div>
+    <div><p class="k">视觉独有裂缝</p><p class="v">4 处</p></div>
+    <div><p class="k">空间去重</p><p class="v">1 条</p></div>
+    <div><p class="k">上图病害点</p><p class="v">13 个</p></div>
+    <div><p class="k">健康度指数</p><p class="v">13.8</p></div>
+  </div>
+  <p>融合后的病害分布：<code>纵向裂缝 4、坑洼 3、减速带 3、井盖/减速带 3</code>，另有 1 条被正确识别为重复观测而未计入。四类融合分支（互证、结构性凸起、视觉独有、空间去重）全部按设计触发。<b>注意那 4 处裂缝是纯视觉的增量</b>——IMU 侧完全没有对应的颠簸事件。</p>
+
+  <h2>五、本轮修掉的实现缺陷</h2>
+  <p>这些都是实际跑出来的问题，记录在此以免重犯；其中前两个是关于"用什么特征"的方法论问题，值得写进方案的技术章：</p>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>问题</th><th>现象与根因</th><th>修法</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>绝对阈值在纯噪声上恒定误报</b></td>
+        <td>用"低于均值 0.9 倍标准差"判暗斑，在纯高斯噪声图像上<b>恒有 18% 像素满足</b>（因为这就是正态分布的固定尾概率），结果平滑路面全被当成坑洼</td>
+        <td>改为<b>光照归一化后</b>做相对亮度比较，再配合连通域面积过滤。暗斑占比从"平路 0.19 / 坑洼 0.06"变成"平路 0.0000 / 坑洼 0.0561"</td>
+      </tr>
+      <tr>
+        <td><b>Otsu 在近均匀图像上失效</b></td>
+        <td>裂缝掩码用 Otsu 自动阈值，但近均匀图像的直方图是单峰的，Otsu 会把噪声随意切开——实测把<b>平滑路面的 60% 像素判成裂缝</b></td>
+        <td>改用固定绝对阈值（黑帽响应 &gt; 28 灰度单位）。裂缝检出率 3/3，平滑路面误检率降为 0</td>
+      </tr>
+      <tr>
+        <td><b>合成图用逐像素噪声</b></td>
+        <td>拉普拉斯方差被独立噪声主导，结果"平滑路面"成了高频最高的一类，特征完全反了</td>
+        <td>改用空间相关噪声（模糊后的噪声）模拟沥青骨料纹理</td>
+      </tr>
+      <tr>
+        <td><b>井盖被裁掉一半</b></td>
+        <td>合成坑洼时未考虑 ROI 裁剪，部分样本被裁去大半，暗斑面积不足以触发阈值，导致坑洼召回只有 2/40</td>
+        <td>把病害限制在 ROI 可见区域内；坑洼召回恢复到 40/40</td>
+      </tr>
+      <tr>
+        <td><b>扫描帧节拍与用例时间不匹配</b></td>
+        <td>扫描帧只在偶数秒产生，而演示脚本把裂缝用例放在了 9、21、45 秒等奇数秒，条件永远不触发，4 处裂缝全部漏掉</td>
+        <td>用例时间对齐到扫描节拍，并加断言防止回归</td>
+      </tr>
+      <tr>
+        <td><b>两侧 id 体系不可比</b></td>
+        <td>IMU 侧用 analyze.py 重新检测事件（id 是自己的行号），视觉侧用采集端的事件 id。这次恰好都是 0–8 所以没暴露，但检测结果一旦多一个或少一个事件，全部 id 就会整体错位</td>
+        <td>不再依赖 id 相同，统一按时间戳对齐（±1200 ms），并在日志里明确打印"id 相同的个数不作为依据"</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>六、完整流水线</h2>
+  <pre># 0) 部署采集端（必须 HTTPS），骑行采集，导出 roadcheck_xxx.zip
+
+# 1) IMU 侧：事件检测 + 健康度指数
+python analyze.py --input samples.csv --outdir out
+#   -> out/events.csv  out/events.geojson  out/summary.json
+
+# 2) 视觉侧：事件帧判定 + 扫描帧自动发现病害
+python vision.py --zip roadcheck_xxx.zip --outdir vis
+#   -> vis/vision_events.json  vis/vision_events.csv
+#   装了 ultralytics 并训练好权重后加：--weights rdd2022_yolov8n.pt
+
+# 3) 融合决策：双模态互证 + 视觉独有 + 空间去重
+python fusion.py --imu out/events.csv --vision vis/vision_events.json --outdir fused
+#   -> fused/fused_events.geojson（合规的聚合病害点，可直接叠地图）
+#   -> fused/fused_summary.json（含覆盖度、互证数、去重数）
+
+# 自检（都不需要任何外部数据）
+python analyze.py --selftest
+python vision.py  --selftest
+python fusion.py  --selftest
+python make_demo_zip.py        # 生成演示包后可跑通 1-3 全链路</pre>
+
+  <h2>七、修订后的 12 天排期</h2>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>时间</th><th>任务</th><th>产出</th></tr></thead>
+    <tbody>
+      <tr><td><b>9.19</b></td><td>报名组队；部署采集端到 HTTPS；跑通三个 <code>--selftest</code></td><td>可访问的采集链接</td></tr>
+      <tr><td><b>9.20–9.22</b></td><td>实采 5 条以上路线。骑行中<b>不需任何操作</b>，结束后回看标定即可。<b>务必保留扫描帧</b></td><td>带标注的自采包（含事件帧 + 扫描帧）</td></tr>
+      <tr><td><b>9.23</b></td><td>下载 RDD2022 中国摩托车子集；装 ultralytics，用 YOLOv8n 跑一个基线</td><td>视觉基线指标（mAP）</td></tr>
+      <tr><td><b>9.24–9.25</b></td><td>IMU 模型 + 视觉模型分别调优；用自采数据重标经典 CV 阈值；产出单模态对比表</td><td>两个模态的评测报告</td></tr>
+      <tr><td><b>9.26–9.27</b></td><td>融合层调优（重点调 20 m 去重半径与置信度）；接腾讯位置服务做展示端</td><td>可在线打开的道路病害地图</td></tr>
+      <tr><td><b>9.28</b></td><td>Agent 层（自然语言查询 + 养护优先级报告）；20 页方案初稿</td><td>Agent + 方案初稿</td></tr>
+      <tr><td><b>9.29</b></td><td>录 5 分钟视频：<b>骑行实拍 → 回看标定 → 融合判定 → 地图收尾</b></td><td>MP4 成片</td></tr>
+      <tr><td><b>9.30</b></td><td>方案定稿、链接可访问性复核、提交</td><td>提交完成</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="notice warn">
+    <strong>排期上最大的风险</strong>
+    视觉模型训练需要 GPU 与时间。如果到 9.25 还没跑出可用的 YOLO 权重，就<b>直接用经典 CV 基线交作品</b>——它已经能识别裂缝与坑洼，而且方案里可以如实说明"下一阶段将接入基于 RDD2022 的检测器"。用能跑的基线 + 清晰的演进路线，比抱着训练不完的模型交不上强。
+  </div>
+
+  <h2>八、下一步建议</h2>
+  <p>按优先级：<b>① 先把采集端部署到 HTTPS 并去采一趟真实数据</b>——这是唯一能产出"别人替代不了"的资产，也是验证权限修复是否真的生效的唯一方式；② 采回来之后跑完整流水线，看真实帧上经典 CV 基线到底退化多少，这个数字决定你要不要在视觉模型上投入；③ 再决定是补 YOLO 还是先做展示端地图。</p>
+
+  <p class="foot">本文对应代码：<code>collector.html</code> v0.2、<code>analyze.py</code> v0.1.1、<code>vision.py</code> v0.1、<code>fusion.py</code> v0.1、<code>make_demo_zip.py</code>。三个 <code>--selftest</code> 与端到端演示均已验证通过。RDD2022 使用请遵守其许可协议并在方案中署名。</p>
+
+</div>
+</body>
+</html>

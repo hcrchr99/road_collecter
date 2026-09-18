@@ -1,0 +1,60 @@
+{
+  "records": 14,
+  "final_distribution": {
+    "纵向裂缝": 4,
+    "重复观测": 1,
+    "坑洼": 3,
+    "减速带": 3,
+    "井盖/减速带": 3
+  },
+  "rule_distribution": {
+    "R1": 4,
+    "R15": 1,
+    "R7": 3,
+    "R6": 3,
+    "R5": 3
+  },
+  "imu_events": 9,
+  "sweep_findings": 5,
+  "deduped": 1,
+  "vision_only_findings": 4,
+  "dual_confirmed": 3,
+  "mapped_defect_points": 13,
+  "coverage": {
+    "universe": 7,
+    "imu": [
+      "井盖",
+      "减速带",
+      "坑洼",
+      "粗糙路面"
+    ],
+    "imu_n": 4,
+    "vision": [
+      "井盖",
+      "坑洼",
+      "横向裂缝",
+      "粗糙路面",
+      "纵向裂缝",
+      "龟裂"
+    ],
+    "vision_n": 6,
+    "fused": [
+      "井盖",
+      "减速带",
+      "坑洼",
+      "横向裂缝",
+      "粗糙路面",
+      "纵向裂缝",
+      "龟裂"
+    ],
+    "fused_n": 7,
+    "imu_missing": [
+      "横向裂缝",
+      "纵向裂缝",
+      "龟裂"
+    ],
+    "vision_missing": [
+      "减速带"
+    ]
+  }
+}

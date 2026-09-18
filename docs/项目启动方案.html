@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>路面体检 · 项目启动方案（iCAN 软件赛道 选题 04）</title>
+<style>
+  :root{
+    --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
+    --blue:#185FA5; --blue-bg:#E6F1FB; --green:#3B6D11; --green-bg:#EAF3DE;
+    --amber:#854F0B; --amber-bg:#FAEEDA; --red:#A32D2D; --red-bg:#FCEBEB;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:48px 24px 80px;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.75;}
+  .wrap{max-width:920px;margin:0 auto;}
+  .eyebrow{font-size:13px;color:var(--faint);letter-spacing:.06em;margin:0 0 10px;}
+  h1{font-size:27px;font-weight:600;line-height:1.35;margin:0 0 12px;letter-spacing:-.01em;}
+  .lede{font-size:15px;color:var(--muted);margin:0 0 32px;max-width:720px;}
+  h2{font-size:17px;font-weight:600;margin:48px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  h3{font-size:15px;font-weight:600;margin:0 0 6px;}
+  p{margin:0 0 12px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:14px;}
+  .tag{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;margin-bottom:8px;}
+  .tag.ok{background:var(--green-bg);color:var(--green);}
+  .tag.warn{background:var(--amber-bg);color:var(--amber);}
+  .tag.info{background:var(--blue-bg);color:var(--blue);}
+  .tag.bad{background:var(--red-bg);color:var(--red);}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#F1EFE8;padding:1px 5px;border-radius:4px;}
+  pre{background:#FAFAF8;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;
+    font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.6;margin:0 0 12px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);}
+  th{background:#FAFAF8;text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);
+    padding:11px 13px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  td{padding:11px 13px;border-bottom:1px solid #F0EFEB;vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  .tbl-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+  .scroll{overflow-x:auto;}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:16px;}
+  .flow-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px dashed #EDECE7;font-size:14px;}
+  .flow-row:last-child{border-bottom:none;}
+  .flow-row .n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--blue-bg);color:var(--blue);
+    font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .flow-row .t{font-weight:600;flex:none;width:130px;}
+  .flow-row .d{color:var(--muted);font-size:13.5px;}
+  .plan{list-style:none;margin:0;padding:0;border-left:2px solid var(--line);}
+  .plan li{position:relative;padding:0 0 20px 22px;}
+  .plan li::before{content:"";position:absolute;left:-5px;top:7px;width:8px;height:8px;border-radius:50%;background:var(--blue);}
+  .plan li.done::before{background:var(--green);}
+  .plan .day{font-size:12px;color:var(--faint);display:block;}
+  .plan .what{font-weight:600;font-size:14.5px;}
+  .plan .out{font-size:13.5px;color:var(--muted);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .notice{background:var(--amber-bg);border:1px solid #EFD9AE;border-radius:10px;padding:16px 20px;margin:0 0 16px;}
+  .notice.danger{background:var(--red-bg);border-color:#F0C9C9;}
+  .notice.good{background:var(--green-bg);border-color:#CFE2B4;}
+  .notice strong{display:block;margin-bottom:4px;}
+  .notice.danger strong{color:var(--red);}
+  .notice.good strong{color:var(--green);}
+  ul{padding-left:20px;margin:6px 0 12px;}
+  li{margin-bottom:5px;}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+  .kpi div{background:var(--card);padding:14px 16px;}
+  .kpi .k{font-size:11.5px;color:var(--faint);margin:0 0 3px;}
+  .kpi .v{font-size:16px;font-weight:600;margin:0;font-variant-numeric:tabular-nums;}
+  .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);}
+  @media (max-width:640px){
+    .grid2{grid-template-columns:1fr;}
+    body{padding:32px 16px 64px;}
+    h1{font-size:22px;}
+    .flow-row{flex-wrap:wrap;}
+    .flow-row .t{width:auto;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">iCAN 大学生创新创业大赛 · AI 应用创新挑战赛 · 软件赛道 · 选题 04</p>
+  <h1>路面体检：众包道路健康度感知平台 —— 项目启动方案</h1>
+  <p class="lede">用每台手机的惯性传感器当道路检测仪：APP 记录骑行/驾驶时的三轴振动，AI 从中识别坑洼、减速带、井盖与粗糙路面，众包汇聚后生成可交给市政养护部门的道路健康度地图。以下是从今天起可执行的完整启动路径。</p>
+
+  <div class="notice danger">
+    <strong>时间约束</strong>
+    本届报名与作品提交截止 <b>2026 年 9 月 30 日</b>，从 9 月 18 日算起只有 <b>12 天</b>。本方案按 12 天冲刺编排；若你是为下一届做准备，把第 2 阶段的采集规模扩大到 20 条以上路线、模型换成时序深度网络即可。
+  </div>
+
+  <h2>一、起点已经搭好：三个文件，可直接运行</h2>
+  <p>为了让你今天就能开始采数据（采集这件事一天都耽误不起，模型可以后补，数据不行），已经完成一个可运行的最小闭环，并逐项验证过：</p>
+
+  <div class="card">
+    <span class="tag ok">已通过自检</span>
+    <h3><code>collector.html</code> —— 采集端 PWA</h3>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 8px;">单文件网页，手机浏览器打开即用，无需安装。用支架把手机固定在车上后开始采集。</p>
+    <ul style="font-size:14px;color:var(--muted);margin-bottom:0;">
+      <li>DeviceMotion 采集加速度计与陀螺仪（约 60Hz），含 iOS 权限申请与防熄屏</li>
+      <li>实时算重力分离、去直流、平滑，画出纵向动态加速度波形与自适应阈值线</li>
+      <li>实时峰值检测，自动给出疑似类型与置信特征（峰值、时长、有效值）</li>
+      <li><b>一键手动打标</b>：骑行中遇到坑洼/减速带/井盖点一下，就地生成真值标签——这是你自采训练集的来源，是最关键的一个按钮</li>
+      <li>导出原始波形 CSV、事件 CSV、完整 JSON 三种格式</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <span class="tag ok">已通过自检</span>
+    <h3><code>analyze.py</code> —— 信号处理与分类基线</h3>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 8px;">完整的离线分析链路，用 <code>--selftest</code> 可在无任何数据的情况下验证全流程。</p>
+    <ul style="font-size:14px;color:var(--muted);margin-bottom:0;">
+      <li>重采样到 100Hz → 巴特沃斯低通分离重力 → 1–20Hz 带通滤波</li>
+      <li>重力方向投影，得到<b>带符号的垂直分量</b>（坑洼的"先下陷后回弹"波形靠它才看得出来）</li>
+      <li>稳健噪声底 + 峰值检测出事件；11 维特征提取；随机森林分类</li>
+      <li>DBSCAN 空间聚类去重（15m 半径），按复现次数算置信度</li>
+      <li>输出事件表 CSV、<b>GeoJSON</b>（可直接叠加到合规地图底图）、健康度指数与养护优先级</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <span class="tag ok">已通过自检</span>
+    <h3><code>tune_detector.py</code> —— 参数标定工具</h3>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 8px;">真实数据到手后，用它重新标检测门限；它同时是你方案里"技术深度"的现成证据。</p>
+  </div>
+
+  <p>自检实测结果（合成骑行数据，1.34 km，注入 33 个事件）：</p>
+  <div class="kpi">
+    <div><p class="k">事件召回率</p><p class="v">100%</p></div>
+    <div><p class="k">误报</p><p class="v">0 个</p></div>
+    <div><p class="k">窗口级 F1-macro</p><p class="v">0.876</p></div>
+    <div><p class="k">分类准确率</p><p class="v">0.97</p></div>
+    <div><p class="k">空间聚类</p><p class="v">33 点</p></div>
+    <div><p class="k">健康度指数</p><p class="v">4.5</p></div>
+  </div>
+
+  <div class="notice">
+    <strong>自检过程中发现并修掉的三个真问题（别重犯）</strong>
+    ① <b>自遮蔽</b>：用滚动标准差做自适应门限时，事件自身把局部标准差抬高、反而把自己屏蔽掉——减速带峰值 3.6，它自己把门限顶到 5.5，召回率只有 67%。改用 <code>|x|</code> 的低分位数作稳健噪声底后，同一数据 100% 召回、0 误报，且在门限倍数 3~6 区间内全部稳定。<br>
+    ② <b>单位混用</b>：经纬度换算同时出现"千米/度"和"米/度"，导致 15 米的聚类半径实际变成 15 公里，33 个事件被并成 1 个点、健康度指数直接算成 0。<br>
+    ③ <b>物理方向搞反</b>：把振动注入水平轴后，重力投影通道里根本没有信号，特征全成噪声（坑洼峰值只剩 0.05）。路面激励以垂直方向为主，采样通道必须与重力同向。
+  </div>
+
+  <h2>二、系统架构</h2>
+  <div class="flow">
+    <div class="flow-row"><span class="n">1</span><span class="t">采集端 PWA</span><span class="d">手机 IMU 约 60Hz + GPS 1Hz；重力分离、峰值检测、手动打标；离线可用、本地先存</span></div>
+    <div class="flow-row"><span class="n">2</span><span class="t">上传层</span><span class="d">分片上传；轨迹原始数据默认留在本地，仅上传匿名化的事件特征</span></div>
+    <div class="flow-row"><span class="n">3</span><span class="t">分析后端</span><span class="d">重采样 100Hz → 带通 1–20Hz → 稳健噪声底事件检测 → 11 维特征 → 分类模型</span></div>
+    <div class="flow-row"><span class="n">4</span><span class="t">聚合层</span><span class="d">DBSCAN 15m 空间聚类去重，按不同用户/行程的复现次数计算置信度</span></div>
+    <div class="flow-row"><span class="n">5</span><span class="t">数据层</span><span class="d">只存聚合后的事件点，不留原始轨迹表（合规要求，也是方案亮点）</span></div>
+    <div class="flow-row"><span class="n">6</span><span class="t">展示层</span><span class="d">腾讯位置服务底图 + 道路健康度分级着色 + 点位详情</span></div>
+    <div class="flow-row"><span class="n">7</span><span class="t">Agent 层</span><span class="d">自然语言查询（"XX 路这段怎么样"）+ 自动生成养护优先级报告</span></div>
+  </div>
+
+  <h2>三、公开数据集：冷启动问题已经解决</h2>
+  <p>这是选题 04 最容易被劝退的点——"没数据怎么训练"。实际上已有多个高质量公开数据集可直接使用，模型不必依赖你自己采的数据：</p>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead>
+      <tr><th>数据集</th><th>内容</th><th>价值</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>AsphaltObstacles</b><br><span style="color:var(--faint);font-size:12px;">UEA 时间序列分类库</span></td>
+        <td>100Hz 三轴加速度 + GPS + 速度，4 类（凸起人行道、凸起标线、减速带、纵向补丁），已划分标准训练/测试集</td>
+        <td><b>首选入门</b>。有官方基准成绩（DTW 81.13%）可以直接对标，是很好的基线对比素材</td>
+      </tr>
+      <tr>
+        <td><b>RoadSens-4M</b><br><span style="color:var(--faint);font-size:12px;">Figshare · 2025 · CC BY 4.0</span></td>
+        <td>103 个采集会话，加速度计/陀螺仪/磁力计/气压计/GPS 同步数据 + 视频标注，含凸起、坑洼、正常路段</td>
+        <td>规模最大、模态最全。可作为预训练主体，视频标注还能做视觉交叉验证</td>
+      </tr>
+      <tr>
+        <td><b>Setiawan 摩托数据集</b><br><span style="color:var(--faint);font-size:12px;">Procedia CS 2022 · GitHub</span></td>
+        <td>摩托车骑行采集，6 类：平路、坑洼、减速带、粗糙路面、<b>人体运动</b>、<b>发动机振动</b></td>
+        <td><b>对你们最关键</b>。后两类正是众包误报的主要来源，有它们才能训练模型区分"真坑洼"和"身体晃动/车辆振动"</td>
+      </tr>
+      <tr>
+        <td><b>RoadSense</b><br><span style="color:var(--faint);font-size:12px;">IEEE DataPort · 2025</span></td>
+        <td>手机 IMU + GPS + 车辆 OBD-II CAN 总线数据 + 前视视频，42MB</td>
+        <td>CAN 总线提供车辆动力学参照，可论证"手机方案与车载方案的相关性"</td>
+      </tr>
+      <tr>
+        <td><b>Road Pavement Health Monitoring</b><br><span style="color:var(--faint);font-size:12px;">Mendeley Data · CC BY 4.0</span></td>
+        <td>iPhone 11/13 双机型、100Hz、爱尔兰公交两条线路（约 6km 与 5km），人工核验标注</td>
+        <td>同一路线多机型对比，可用来论证<b>跨设备一致性</b>——这是评委必问的问题</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted);">引用这些数据集时务必在方案中标明来源与许可协议（CC BY 4.0 需署名），这也符合赛事对知识产权的要求。此外可选的一招：用 OpenStreetMap 的道路属性标签（<code>surface=*</code>、<code>highway=*</code>）作为<b>弱监督标签</b>，给自己的采集数据自动预标注，再人工复核——这在方案里是一个很有说服力的技术点（注意：OSM 只能作为数据来源，地图底图必须使用有测绘资质的服务，见第六节）。</p>
+
+  <h2>四、12 天冲刺排期</h2>
+  <ul class="plan">
+    <li>
+      <span class="day">9.18 – 9.19　第 1–2 天</span>
+      <span class="what">定队与铺路</span>
+      <span class="out">官网完成报名（截止前不能改团队信息）；5 人分工确定；下载全部公开数据集；本地跑通 <code>analyze.py --selftest</code>；把 <code>collector.html</code> 部署到 HTTPS 静态托管（Vercel / Cloudflare Pages 免费且几分钟完成）。<br><b>产出：</b>可访问的采集链接 + 跑通的分析脚本</span>
+    </li>
+    <li>
+      <span class="day">9.20 – 9.22　第 3–5 天</span>
+      <span class="what">实采数据（最关键的三天）</span>
+      <span class="out">骑车采集 5 条以上路线，每条 3–5 km，覆盖不同路面质量；手机必须用支架固定，边骑边点按钮打标。目标 <b>600 个以上带标注事件</b>。同时记录每条路线的手机型号。<br><b>产出：</b>自采带标注数据集 + 采集过程实拍素材（视频要用）</span>
+    </li>
+    <li>
+      <span class="day">9.23 – 9.25　第 6–8 天</span>
+      <span class="what">模型与指标</span>
+      <span class="out">公开数据集预训练 + 自采数据微调；对比规则基线、随机森林、XGBoost（时间够就加一维 CNN）；产出准确率/召回/误报率/F1 与特征重要性表；做跨机型一致性测试。<br><b>产出：</b>模型 + 指标对比表 + 特征重要性图（方案文档核心素材）</span>
+    </li>
+    <li>
+      <span class="day">9.26 – 9.27　第 9–10 天</span>
+      <span class="what">后端聚合与地图展示</span>
+      <span class="out">事件上传接口 + DBSCAN 聚合 + 复现置信度 + 道路健康度分级；用腾讯位置服务搭展示端地图（见第六节的申请流程）；用真实采集数据渲染出第一条"道路体检报告"。<br><b>产出：</b>可在线打开的展示链接</span>
+    </li>
+    <li>
+      <span class="day">9.28　第 11 天</span>
+      <span class="what">Agent 层 + 方案初稿</span>
+      <span class="out">接入大模型做自然语言查询与养护优先级报告生成；开始写 20 页应用方案。<br><b>产出：</b>可对话的 Agent + 方案初稿</span>
+    </li>
+    <li>
+      <span class="day">9.29　第 12 天上午</span>
+      <span class="what">演示视频</span>
+      <span class="out">录制 5 分钟视频：必须完整呈现"接收请求 → 分析决策 → 反馈结果"，用真实骑行实拍 + 屏幕录制 + 指标图表三段结构。<br><b>产出：</b>MP4 成片</span>
+    </li>
+    <li>
+      <span class="day">9.30　截止日</span>
+      <span class="what">提交与复核</span>
+      <span class="out">方案定稿、链接在他人设备上验证可访问、材料清单逐项打勾，留半天缓冲。</span>
+    </li>
+  </ul>
+
+  <h2>五、团队分工（4–5 人）</h2>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>角色</th><th>负责范围</th><th>关键交付</th></tr></thead>
+    <tbody>
+      <tr><td><b>A 前端 / 体验</b></td><td>采集端 PWA 迭代、展示端地图与交互、响应式与可用性</td><td>采集链接、展示链接</td></tr>
+      <tr><td><b>B 算法 / 后端</b></td><td>信号处理、事件检测、分类模型、聚合服务与接口</td><td>模型与指标、后端服务</td></tr>
+      <tr><td><b>C 数据 / 标注</b></td><td>公开数据集整理对齐、自采路线规划、标注质检、评测脚本</td><td>训练集、评测报告</td></tr>
+      <tr><td><b>D 方案 / 视频</b></td><td>20 页方案撰写、商业模式、5 分钟视频脚本与剪辑</td><td>PDF 方案、演示视频</td></tr>
+      <tr><td><b>E 统筹（可选）</b></td><td>进度把控、合规与隐私政策、答辩准备、对外联络</td><td>合规文档、答辩稿</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted);">指导老师建议找<b>交通工程 / 土木（路面养护方向）</b>加一位<b>计算机</b>老师，前者帮你把指标定义说得住，后者帮你把技术路线说得通。若只有一位，优先交通或土木方向的老师——技术你自己能扛，专业背书别人替不了。</p>
+
+  <h2>六、合规设计（必须做，而且是加分项）</h2>
+  <div class="notice danger">
+    <strong>这个项目处理的是位置数据，合规不是可选项</strong>
+    众包位置信息涉及《个人信息保护法》，一旦在方案里对这一点含糊，评委很容易质疑，甚至影响立项。
+  </div>
+  <ul>
+    <li><b>只发布聚合结果。</b>系统对外只输出聚合后的事件点（坑洼、减速带的位置），<b>不发布任何原始轨迹</b>——原始轨迹能反推出个人出行规律与居住地，是敏感信息。</li>
+    <li><b>原始数据本地优先。</b>轨迹默认存在手机本地，用户可一键删除；仅上传去标识化后的事件特征。</li>
+    <li><b>去标识化。</b>不采集用户身份信息、设备唯一标识、联系方式；记录以匿名会话为单位。</li>
+    <li><b>明确授权。</b>采集前弹窗说明用途，提供可访问的隐私政策页面，支持随时撤回。</li>
+    <li><b>不采集他人位置数据。</b>只处理用户本人主动采集的轨迹。</li>
+    <li><b>地图底图必须使用有测绘资质的服务。</b>用腾讯位置服务（<code>map.qq.com/api/gljs</code>）、高德或百度，<b>不要用境外瓦片服务或未经资质的地图源</b>。腾讯位置服务 key 需在 lbs.qq.com 申请并配置 Referer 白名单；<b>绝不要把 key 明文写进前端代码提交</b>，正式版走后端代理鉴权。</li>
+    <li><b>坐标系用 GCJ-02。</b>国内地图服务统一使用该坐标系，混用会整体偏移几百米。</li>
+  </ul>
+
+  <h2>七、技术难点与对策</h2>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>难点</th><th>为什么难</th><th>对策</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>手机采样率只有约 60Hz</b></td>
+        <td>文献常用 100Hz，评委会问"采样率不够会不会漏掉信息"</td>
+        <td>主动说明：分析端统一重采样到 100Hz，60Hz 采样对应 30Hz 奈奎斯特上限，而路面激励主导频段在 1–20Hz，覆盖充分。<b>主动提出来比被问出来好得多</b></td>
+      </tr>
+      <tr>
+        <td><b>误报：人体动作与车辆振动</b></td>
+        <td>手机在口袋里、或车辆发动机振动，都会被当成路面颠簸</td>
+        <td>三重防护：支架固定采集 + 速度门控（低于 8km/h 不判定）+ 用 Setiawan 数据集的"人体运动/发动机振动"类别训练模型专门识别并剔除</td>
+      </tr>
+      <tr>
+        <td><b>跨机型差异</b></td>
+        <td>不同手机传感器量程、灵敏度、安装朝向都不同，模型换台手机可能就失效</td>
+        <td>用重力方向投影消除安装朝向影响；采集时记录机型，出分机型指标；用公开的多机型数据集（Road Pavement Health Monitoring）论证一致性</td>
+      </tr>
+      <tr>
+        <td><b>GPS 精度只有 5–10 米</b></td>
+        <td>同一个坑洼被多次采集时，位置点会散开</td>
+        <td>DBSCAN 15 米半径聚类合并；用复现次数作置信度，复现越多越可信——这本身也是众包的价值主张</td>
+      </tr>
+      <tr>
+        <td><b>弱事件漏检</b></td>
+        <td>长时低幅的减速带容易被自适应门限屏蔽</td>
+        <td>已解决：稳健分位数噪声底（见第一节）。若仍有漏检，下一步加"持续能量通道"，用滑动有效值专门捕捉持续型事件</td>
+      </tr>
+      <tr>
+        <td><b>健康度指标准确性</b></td>
+        <td>官方 IRI/PCI 需要专业设备标定，众包数据算不出标准值</td>
+        <td>明确声明本指数是<b>自研的相对指标</b>，不替代国家标准；可通过与公开路线的人工巡查记录做趋势校验。<b>如实说明比夸大更容易拿到分数</b></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>八、评分项对应策略</h2>
+  <div class="tbl-wrap scroll">
+  <table>
+    <thead><tr><th>评分项</th><th>分值</th><th>这个项目怎么拿分</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>创新性</b></td>
+        <td>30</td>
+        <td>把"每台手机都是道路检测仪"这件事做成零改造、零硬件成本的众包系统；与三类现有方案形成差异化：人工巡检（贵、慢、覆盖低）、专用检测车（设备贵、频次低）、纯视觉方案（依赖光照与视角、只能拍表面）。核心差异点是<b>惯性传感 + 复现置信度 + 密度归一化的健康度指数</b>这套组合</td>
+      </tr>
+      <tr>
+        <td><b>技术实现</b></td>
+        <td>30</td>
+        <td>完整的物理与算法链条：重力分离 → 带符号垂直分量 → 带通滤波 → 稳健噪声底检测 → 多模态特征 → 分类模型 → 空间聚类。<b>把"自遮蔽"这个坑写进方案</b>——展示你发现了问题、量化了它（67% → 100%）、并给出了稳健解法，这是技术实现项最有说服力的内容</td>
+      </tr>
+      <tr>
+        <td><b>实用价值</b></td>
+        <td>20</td>
+        <td>付费方清晰：市政养护部门（降低巡检成本、提升响应速度）、网约车与外卖平台（骑手安全与车辆损耗）、保险公司（UBI 差异化定价，路面数据是风险因子）、出行导航（路面质量图层）。落地路径分三步：校园试点 → 单个城区 → 平台合作</td>
+      </tr>
+      <tr>
+        <td><b>用户体验</b></td>
+        <td>10</td>
+        <td>采集端一行代码都不用装，打开网页点一下就开始，骑行中一键打标；展示端支持直接看路段详情与养护建议。做一个"无需登录即可体验"的演示入口</td>
+      </tr>
+      <tr>
+        <td><b>展示效果</b></td>
+        <td>10</td>
+        <td>视频用真实骑行实拍开场（手机支架、颠簸瞬间、按钮打标），接屏幕录制展示 Agent 分析决策，最后用健康度地图收尾。避免通篇录屏</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>九、今天就能做的三件事</h2>
+  <div class="grid2">
+    <div class="card" style="margin:0;">
+      <span class="tag info">1 · 30 分钟</span>
+      <h3>验证采集端</h3>
+      <p style="font-size:14px;color:var(--muted);margin:0;">把 <code>collector.html</code> 传到任意 HTTPS 静态托管的免费域名，用手机打开，授权运动与定位权限，骑车或坐车走一段，看有没有检出事件与波形。</p>
+    </div>
+    <div class="card" style="margin:0;">
+      <span class="tag info">2 · 20 分钟</span>
+      <h3>跑通分析链路</h3>
+      <p style="font-size:14px;color:var(--muted);margin:0;">装好 numpy / scipy / pandas / scikit-learn，运行 <code>python analyze.py --selftest</code>，确认 7 个环节全部通过。再把导出的 CSV 用 <code>--input</code> 喂进去。</p>
+    </div>
+    <div class="card" style="margin:0;">
+      <span class="tag info">3 · 半天</span>
+      <h3>下载数据集并报名</h3>
+      <p style="font-size:14px;color:var(--muted);margin:0;">先下 AsphaltObstacles（最小、最快出结果）与 Setiawan 摩托数据集（含误报类别）。同时完成官网报名组队——报名信息截止后不可修改，越早越好。</p>
+    </div>
+  </div>
+
+  <p class="foot">依据 2026 年 iCAN AI 应用创新挑战赛官方通知（g-ican.com 赛事编号 138）整理。赛程与提交要求以官网最新公告为准。公开数据集的使用请遵守各自许可协议并在方案中署名。</p>
+
+</div>
+</body>
+</html>

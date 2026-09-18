@@ -1,0 +1,265 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.47500410334663,
+          31.23403034779828
+        ]
+      },
+      "properties": {
+        "id": -5,
+        "final": "纵向裂缝",
+        "conf": 0.805,
+        "rule": "R1",
+        "imu": null,
+        "vision": "裂缝",
+        "source": "sweep",
+        "t_ms": 70000.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.47455704606456,
+          31.23278583491214
+        ]
+      },
+      "properties": {
+        "id": -4,
+        "final": "纵向裂缝",
+        "conf": 0.805,
+        "rule": "R1",
+        "imu": null,
+        "vision": "裂缝",
+        "source": "sweep",
+        "t_ms": 46000.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.47410998878244,
+          31.231541322026
+        ]
+      },
+      "properties": {
+        "id": -2,
+        "final": "纵向裂缝",
+        "conf": 0.805,
+        "rule": "R1",
+        "imu": null,
+        "vision": "裂缝",
+        "source": "sweep",
+        "t_ms": 22000.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4738864601414,
+          31.230919065582928
+        ]
+      },
+      "properties": {
+        "id": -1,
+        "final": "纵向裂缝",
+        "conf": 0.805,
+        "rule": "R1",
+        "imu": null,
+        "vision": "裂缝",
+        "source": "sweep",
+        "t_ms": 10000.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4737568,
+          31.2305582
+        ]
+      },
+      "properties": {
+        "id": 0,
+        "final": "坑洼",
+        "conf": 0.95,
+        "rule": "R7",
+        "imu": "坑洼",
+        "vision": "坑洼",
+        "source": "event",
+        "t_ms": 3040.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4739835,
+          31.2311892
+        ]
+      },
+      "properties": {
+        "id": 1,
+        "final": "减速带",
+        "conf": 0.65,
+        "rule": "R6",
+        "imu": "减速带",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 15210.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4742044,
+          31.2318042
+        ]
+      },
+      "properties": {
+        "id": 2,
+        "final": "井盖/减速带",
+        "conf": 0.7,
+        "rule": "R5",
+        "imu": "井盖",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 27070.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4744276,
+          31.2324254
+        ]
+      },
+      "properties": {
+        "id": 3,
+        "final": "坑洼",
+        "conf": 0.95,
+        "rule": "R7",
+        "imu": "坑洼",
+        "vision": "坑洼",
+        "source": "event",
+        "t_ms": 39050.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4746539,
+          31.2330555
+        ]
+      },
+      "properties": {
+        "id": 4,
+        "final": "减速带",
+        "conf": 0.65,
+        "rule": "R6",
+        "imu": "减速带",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 51200.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4748748,
+          31.2336705
+        ]
+      },
+      "properties": {
+        "id": 5,
+        "final": "井盖/减速带",
+        "conf": 0.7,
+        "rule": "R5",
+        "imu": "井盖",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 63060.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4750982,
+          31.2342922
+        ]
+      },
+      "properties": {
+        "id": 6,
+        "final": "坑洼",
+        "conf": 0.95,
+        "rule": "R7",
+        "imu": "坑洼",
+        "vision": "坑洼",
+        "source": "event",
+        "t_ms": 75050.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4753243,
+          31.2349217
+        ]
+      },
+      "properties": {
+        "id": 7,
+        "final": "减速带",
+        "conf": 0.65,
+        "rule": "R6",
+        "imu": "减速带",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 87190.0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.4755456,
+          31.2355378
+        ]
+      },
+      "properties": {
+        "id": 8,
+        "final": "井盖/减速带",
+        "conf": 0.7,
+        "rule": "R5",
+        "imu": "井盖",
+        "vision": "平路",
+        "source": "event",
+        "t_ms": 99070.0
+      }
+    }
+  ]
+}

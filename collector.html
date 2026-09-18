@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#F7F7F5">
+<title>路面体检 · 采集端 v0.2</title>
+<style>
+  :root{
+    --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
+    --blue:#185FA5; --blue-bg:#E6F1FB; --green:#3B6D11; --green-bg:#EAF3DE;
+    --amber:#854F0B; --amber-bg:#FAEEDA; --red:#A32D2D; --red-bg:#FCEBEB;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;padding:16px 14px 48px;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.6;}
+  .wrap{max-width:540px;margin:0 auto;}
+  h1{font-size:17px;font-weight:600;margin:0 0 2px;}
+  .sub{font-size:12.5px;color:var(--faint);margin:0 0 16px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;}
+  .card h2{font-size:14px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .step{flex:none;width:20px;height:20px;border-radius:50%;background:var(--blue-bg);color:var(--blue);
+    font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .step.done{background:var(--green-bg);color:var(--green);}
+  .chk{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #F3F2EE;font-size:13px;align-items:flex-start;}
+  .chk:last-child{border-bottom:none;}
+  .chk .mk{flex:none;width:14px;text-align:center;font-weight:600;}
+  .chk .lb{flex:none;width:132px;color:var(--muted);}
+  .chk .vl{flex:1;word-break:break-word;}
+  .ok{color:var(--green);} .no{color:var(--red);} .warn{color:var(--amber);}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px;}
+  .m{background:var(--card);padding:11px 6px;text-align:center;}
+  .m .k{font-size:10.5px;color:var(--faint);margin:0 0 2px;}
+  .m .v{font-size:18px;font-weight:600;margin:0;font-variant-numeric:tabular-nums;}
+  .m .v small{font-size:10.5px;font-weight:400;color:var(--faint);margin-left:1px;}
+  canvas{width:100%;height:118px;display:block;border-radius:8px;background:#FAFAF8;}
+  #preview{width:100%;height:150px;object-fit:cover;border-radius:8px;background:#F1EFE8;display:block;}
+  #previewTrial{width:100%;height:150px;object-fit:cover;border-radius:8px;background:#F1EFE8;display:block;}
+  button{font-family:inherit;font-size:15px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card);color:var(--text);padding:12px 16px;cursor:pointer;width:100%;font-weight:500;}
+  button:active{opacity:.7;}
+  button:disabled{opacity:.4;cursor:default;}
+  .primary{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .stop{background:var(--red);border-color:var(--red);color:#fff;}
+  .sm{font-size:13px;padding:9px 10px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+  .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;}
+  .labels button{padding:9px 2px;font-size:12px;}
+  .lg-p{background:var(--red-bg);border-color:#F0C9C9;color:var(--red);}
+  .lg-b{background:var(--amber-bg);border-color:#EFD9AE;color:var(--amber);}
+  .lg-m{background:var(--blue-bg);border-color:#C3DDF5;color:var(--blue);}
+  .lg-r{background:#F1EFE8;border-color:var(--line);color:var(--muted);}
+  .lg-n{background:var(--green-bg);border-color:#CFE2B4;color:var(--green);}
+  .ev{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px;}
+  .ev-top{display:flex;gap:10px;align-items:flex-start;}
+  .ev img{width:88px;height:62px;object-fit:cover;border-radius:6px;background:#F1EFE8;flex:none;}
+  .ev .info{flex:1;font-size:12.5px;color:var(--muted);min-width:0;}
+  .ev .tt{font-size:13.5px;font-weight:600;color:var(--text);margin:0 0 3px;}
+  .ev .badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+    background:var(--blue-bg);color:var(--blue);margin-left:5px;font-weight:400;}
+  .ev .badge.g{background:var(--green-bg);color:var(--green);}
+  .empty{color:var(--faint);font-size:13px;text-align:center;padding:14px 0;}
+  .modes{display:grid;gap:8px;}
+  .modes label{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:10px 12px;
+    border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13.5px;}
+  .modes input{flex:none;margin:0;}
+  .modes .mt{font-weight:600;}
+  .modes .md{flex-basis:100%;color:var(--muted);font-size:12.5px;margin-left:22px;}
+  .modes label:has(input:checked){border-color:var(--blue);background:var(--blue-bg);}
+  .gatewarn{background:var(--amber-bg);border:1px solid #EFD9AE;border-radius:10px;padding:11px 14px;
+    font-size:12.5px;color:var(--amber);margin-top:10px;display:none;}
+  .gatewarn.on{display:block;}
+  .err{background:var(--red-bg);border:1px solid #F0C9C9;border-radius:10px;padding:12px 14px;
+    font-size:13px;color:var(--red);margin-bottom:12px;display:none;}
+  .err b{display:block;margin-bottom:3px;}
+  .note{font-size:12.5px;color:var(--muted);background:#FAFAF8;border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;margin-bottom:12px;}
+  .note b{color:var(--text);}
+  ol{padding-left:20px;margin:6px 0 0;font-size:13px;color:var(--muted);}
+  ol li{margin-bottom:3px;}
+  .hidden{display:none;}
+  .flash{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(31,31,29,.88);
+    color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;
+    transition:opacity .15s;z-index:99;}
+  .flash.on{opacity:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.2</span></h1>
+  <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
+
+  <div class="err" id="err"></div>
+
+  <div class="card">
+    <h2><span class="step" id="s1">1</span>环境自检</h2>
+    <div id="checks"><p class="empty">检测中…</p></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step" id="s2">2</span>授权并试采</h2>
+    <p class="sub" style="margin:0 0 10px;">必须在同一个点击里发起定位与传感器授权，否则浏览器不会弹窗。试采 4 秒，确认传感器真的有数据再出发。</p>
+    <button class="primary" id="btnAuth">授权并试采 4 秒</button>
+    <div id="trialResult" style="margin-top:10px;"></div>
+    <div id="trialCamWrap" class="hidden" style="margin-top:10px;">
+      <video id="previewTrial" playsinline muted autoplay></video>
+      <p class="sub" style="margin:6px 0 0;font-size:11.5px;">摄像头取景预览 · 请确认朝向路面（略微下俯效果最好）</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step" id="s3">3</span>正式采集</h2>
+    <div class="note" style="margin-bottom:10px;">
+      <b>出发前请确认</b>
+      <ol>
+        <li>手机用支架<b>固定</b>在车把/车架上，不要放口袋</li>
+        <li>摄像头朝向<b>前方路面</b>（略微下俯效果最好）——视觉帧是后面自动标注的依据</li>
+        <li>骑行中<b>不需要</b>点屏幕打标，终点结束后统一回看标定</li>
+      </ol>
+    </div>
+    <div id="ctrl"><button class="primary" id="btnStart" disabled>开始采集</button></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">·</span>采集模式</h2>
+    <p class="sub" style="margin:0 0 10px;">速度门控（8 km/h）是为了滤掉人体动作造成的假事件。但静止或手持模拟时速度恒为 0，
+    门控会把<b>全部</b>事件挡掉——上一版就在这里踩过坑，现在改为可显式选择。</p>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="ride" checked>
+        <span class="mt">骑行 / 车载</span>
+        <span class="md">速度门控 8 km/h 生效，抑制人体动作误报。正式采集请用这个</span></label>
+      <label><input type="radio" name="mode" value="test">
+        <span class="mt">手持 / 静止测试</span>
+        <span class="md">关闭速度门控，用于室内模拟验证信号链路。此时速度读数无意义</span></label>
+    </div>
+    <p class="sub" style="margin:10px 0 0;font-size:12px;" id="modeHint"></p>
+  </div>
+
+  <div class="card hidden" id="liveCard">
+    <div class="grid4">
+      <div class="m"><p class="k">速度</p><p class="v" id="mSpeed">0<small>km/h</small></p></div>
+      <div class="m"><p class="k">时长</p><p class="v" id="mTime">0<small>s</small></p></div>
+      <div class="m"><p class="k">采样</p><p class="v" id="mRate">0<small>Hz</small></p></div>
+      <div class="m"><p class="k">事件</p><p class="v" id="mEvent">0</p></div>
+    </div>
+    <video id="preview" playsinline muted autoplay></video>
+    <p class="sub" style="margin:8px 0 10px;font-size:11.5px;">视觉预览 · 事件触发时自动保留前后共约 1.6 秒的画面</p>
+    <canvas id="wave"></canvas>
+    <p class="sub" style="margin:6px 0 0;font-size:11.5px;" id="waveLegend">纵向动态加速度（去重力 + 去直流），虚线为稳健噪声底门限，顶端红为检出事件</p>
+    <div class="gatewarn" id="gateWarn"></div>
+  </div>
+
+  <div class="card hidden" id="labelCard">
+    <h2><span class="step" id="s4">4</span>事后回看标定</h2>
+    <p class="sub" style="margin:0 0 8px;">每条事件都带画面缩略图，看着图点标签就行——比骑行途中盲点准得多。<b>点「误报」的事件会作为负样本保留</b>，这对降低误报最有价值。</p>
+    <div id="evList"><p class="empty">尚未检出事件</p></div>
+  </div>
+
+  <div class="card hidden" id="exportCard">
+    <h2><span class="step" id="s5">5</span>导出</h2>
+    <div class="row2">
+      <button id="btnZip">完整数据包 ZIP</button>
+      <button class="sm" id="btnJson">完整 JSON</button>
+    </div>
+    <div class="row2">
+      <button class="sm" id="btnRaw">原始波形 CSV</button>
+      <button class="sm" id="btnEv">事件 CSV</button>
+    </div>
+    <div class="row2">
+      <button class="sm" id="btnReset">清空重来</button>
+      <button class="sm" id="btnBack">返回查看事件</button>
+    </div>
+    <p class="sub" style="margin:10px 0 0;font-size:12px;" id="zipHint">ZIP 内含 samples.csv、events.csv、meta.json 与 frames/ 目录（每条事件一张代表帧），可直接喂给 Python 侧分析。</p>
+  </div>
+
+</div>
+<div class="flash" id="flash"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const CFG = {
+  TAU_GRAVITY: 0.5, TAU_SMOOTH: 0.010,
+  NOISE_WIN_S: 3.0, NOISE_Q: 0.20, NOISE_K: 4.0, MIN_THRESHOLD: 1.2,
+  RELEASE_RATIO: 0.5, REFRACTORY_MS: 600, MAX_EVENT_MS: 3000,
+  MIN_SPEED_MS: 8 / 3.6,
+  FRAME_MS: 100, RING_FRAMES: 24,
+  KEEP_BEFORE_MS: 1200, KEEP_AFTER_MS: 400, MAX_FRAMES_PER_EVENT: 6,
+  FRAME_W: 480, FRAME_H: 360,
+  // 周期性扫描帧：裂缝不引起颠簸，永远不会触发事件抓帧。
+  // 若只靠事件抓帧，视觉就永远贡献不了裂缝这一大类病害——这是架构必需，不是可选项。
+  SWEEP_MS: 2000
+};
+
+const S = {
+  recording: false, samples: [], events: [],
+  g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0,
+  inEvent: false, cur: null, lastEnd: 0, lastT: 0,
+  gps: { lat: null, lon: null, spd: null, acc: null }, prevFix: null,
+  win: [], motionCount: 0, t0: 0, thr: CFG.MIN_THRESHOLD,
+  wakeLock: null, gpsWatch: null,
+  stream: null, frameTimer: null, sweepTimer: null, ring: [], sweeps: [],
+  trial: null,
+  mode: 'ride',        // 'ride' | 'test'
+  gateBlocked: 0,      // 被速度门控拦下的候选事件段数
+  blockEp: false,      // 是否正处于"超门限但被门控拦下"的连续段
+  spdMax: 0, spdUsable: false
+};
+
+function now() { return performance.now(); }
+function haversine(a, b) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+function speed() { const s = S.gps.spd; return (s === null || isNaN(s)) ? 0 : s; }
+function flash(msg) {
+  const f = $('flash'); f.textContent = msg; f.classList.add('on');
+  clearTimeout(f._t); f._t = setTimeout(() => f.classList.remove('on'), 900);
+  if (navigator.vibrate) navigator.vibrate(25);
+}
+function showErr(title, detail) {
+  const e = $('err');
+  e.innerHTML = '<b>' + title + '</b>' + (detail || '');
+  e.style.display = 'block';
+}
+function clearErr() { $('err').style.display = 'none'; }
+
+/* ============================ 1. 环境自检 ============================ */
+async function probe() {
+  const rows = [];
+  const add = (label, ok, value, level) => rows.push({ label, ok, value, level: level || (ok ? 'ok' : 'no') });
+
+  const secure = window.isSecureContext;
+  add('安全上下文', secure,
+    secure ? '是（' + location.protocol + '//' + location.host + '）'
+           : '否 —— 当前是 ' + location.protocol + '//' + location.host +
+             '。浏览器会拒绝传感器与定位权限，必须用 HTTPS 或 localhost 打开');
+
+  const dm = typeof DeviceMotionEvent !== 'undefined';
+  add('运动传感器 API', dm, dm ? '可用' : '此浏览器不支持 DeviceMotion，请换 Chrome / Safari');
+
+  const iosNeedsAsk = dm && typeof DeviceMotionEvent.requestPermission === 'function';
+  add('传感器授权方式', true,
+    iosNeedsAsk ? 'iOS 模式：需在用户点击中调用授权，本页已处理'
+                : 'Android / 桌面模式：由浏览器设置控制，被拒时不会报错（本页有看门狗检测）',
+    iosNeedsAsk ? 'ok' : 'warn');
+
+  const geo = !!navigator.geolocation;
+  add('定位 API', geo, geo ? '可用' : '不可用');
+
+  const cam = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  add('摄像头 API', cam, cam ? '可用' : '不可用 —— 将退化为纯 IMU 采集',
+    cam ? 'ok' : 'warn');
+
+  if (navigator.permissions && navigator.permissions.query) {
+    for (const name of ['geolocation', 'camera']) {
+      try {
+        const st = await navigator.permissions.query({ name });
+        const v = { granted: '已允许', denied: '已被拒绝（浏览器不会再弹窗）', prompt: '尚未决定' }[st.state] || st.state;
+        add(name === 'geolocation' ? '定位权限状态' : '摄像头权限状态',
+          st.state !== 'denied', v, st.state === 'granted' ? 'ok' : (st.state === 'denied' ? 'no' : 'warn'));
+      } catch (e) {
+        add(name === 'geolocation' ? '定位权限状态' : '摄像头权限状态', true, '浏览器不支持查询（Safari 常见）', 'warn');
+      }
+    }
+  }
+
+  $('checks').innerHTML = rows.map(r =>
+    '<div class="chk"><span class="mk ' + r.level + '">' +
+    (r.level === 'ok' ? '✓' : r.level === 'warn' ? '!' : '✕') + '</span>' +
+    '<span class="lb">' + r.label + '</span><span class="vl ' + r.level + '">' + r.value + '</span></div>'
+  ).join('');
+
+  return rows;
+}
+
+/* ============================ 2. 授权 ============================ */
+function geoMsg(code, raw) {
+  if (code === 1) return '权限被拒绝。若之前点过「拒绝」，浏览器<b>不会再弹窗</b>——请点地址栏左侧的站点设置（锁形图标）把「位置」改为允许，然后刷新本页。另外确认本页是 HTTPS 打开的。';
+  if (code === 2) return '位置不可用。系统定位服务可能被关闭，或当前在室内/地下无卫星信号。请开启系统定位并到室外重试。';
+  if (code === 3) return '定位超时。请到室外、关闭省电模式后重试。';
+  return '错误码 ' + code + (raw ? '：' + raw : '');
+}
+
+let trialSampleCount = 0;
+let trialLastT = 0;
+
+function trialHandler(ev) {
+  trialSampleCount++;
+  const t = now();
+  if (trialLastT) S.trial.gaps.push(t - trialLastT);
+  trialLastT = t;
+}
+
+async function authorize() {
+  clearErr();
+  $('btnAuth').disabled = true;
+  $('trialResult').innerHTML = '<p class="sub" style="margin:0;">正在请求授权…若浏览器弹出提示，请选择「允许」。</p>';
+
+  // 关键：定位与摄像头都必须在点击手势内**同步发起**，
+  // 一旦 await 过任何异步操作，手势即失效，iOS 会静默拒绝。
+  // 上一版把摄像头放在 await 之后，结果 camera_enabled=false、一张画面都没有。
+  const geoAsk = new Promise(resolve => {
+    if (!navigator.geolocation) return resolve({ ok: false, api: false });
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ ok: true, pos: p }),
+      e => resolve({ ok: false, api: true, code: e.code, raw: e.message }),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  });
+
+  const camAsk = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    ? navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      }).then(s => ({ ok: true, stream: s })).catch(e => ({ ok: false, err: e }))
+    : Promise.resolve({ ok: false, err: new Error('此浏览器不支持摄像头 API') });
+
+  let motion = { ok: true, note: 'Android/桌面模式，由浏览器设置控制' };
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const r = await DeviceMotionEvent.requestPermission();
+      motion = { ok: r === 'granted', note: r };
+    } catch (e) {
+      motion = { ok: false, note: e.message };
+    }
+  }
+
+  S.trial = { gaps: [] };
+  trialSampleCount = 0; trialLastT = 0;
+  window.addEventListener('devicemotion', trialHandler);
+
+  const [geo, cam] = await Promise.all([geoAsk, camAsk]);
+  const lines = [];
+
+  if (!geo.ok) {
+    lines.push(geo.api === false
+      ? '<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">此浏览器不支持定位</span></div>'
+      : '<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">' + geoMsg(geo.code, geo.raw) + '</span></div>');
+  } else {
+    const c = geo.pos.coords;
+    S.gps = { lat: c.latitude, lon: c.longitude, spd: c.speed, acc: c.accuracy };
+    lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">定位</span><span class="vl ok">已获取，精度 ' +
+      (c.accuracy ? c.accuracy.toFixed(0) + ' m' : '未知') + '</span></div>');
+  }
+
+  if (cam.ok) {
+    if (S.stream) S.stream.getTracks().forEach(t => t.stop());
+    S.stream = cam.stream;
+    $('preview').srcObject = cam.stream;
+    $('previewTrial').srcObject = cam.stream;
+    $('trialCamWrap').classList.remove('hidden');
+    lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">摄像头</span><span class="vl ok">已启用，请核对下方取景</span></div>');
+  } else {
+    lines.push('<div class="chk"><span class="mk warn">!</span><span class="lb">摄像头</span><span class="vl warn">' +
+      (cam.err && cam.err.name ? cam.err.name + '：' : '') +
+      '未启用。将退化为纯 IMU 采集（无视觉自动标注）。可检查地址栏的摄像头权限后重新授权。</span></div>');
+  }
+
+  lines.push('<div class="chk"><span class="mk ' + (motion.ok ? 'ok' : 'no') + '">' + (motion.ok ? '✓' : '✕') +
+    '</span><span class="lb">运动传感器</span><span class="vl ' + (motion.ok ? 'ok' : 'no') + '">' +
+    (motion.ok ? motion.note
+      : '未授权（' + motion.note + '）。iOS 需在 设置 → Safari → 运动与方向访问 中开启。') +
+    '</span></div>');
+
+  lines.push('<div class="chk"><span class="mk warn">…</span><span class="lb">试采中</span><span class="vl warn">请静置或轻微晃动手机，4 秒…</span></div>');
+  $('trialResult').innerHTML = lines.join('');
+
+  setTimeout(() => {
+    window.removeEventListener('devicemotion', trialHandler);
+    const gaps = S.trial.gaps.slice().sort((a, b) => a - b);
+    const med = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+    const hz = med > 0 ? 1000 / med : 0;
+    const got = trialSampleCount;
+
+    let verdict;
+    if (got === 0) {
+      verdict = '<div class="chk"><span class="mk no">✕</span><span class="lb">试采结果</span><span class="vl no">' +
+        '4 秒内没有收到任何传感器数据。原因通常是：① 本页不是 HTTPS；② iOS 未授权运动与方向；' +
+        '③ 浏览器「运动传感器」权限被关闭。请按提示处理后重新点击授权。</span></div>';
+      showErr('传感器无数据', '授权看似通过，但实际收不到数据。请逐项核对上方自检结果，尤其是「安全上下文」是否为「是」。');
+      $('btnStart').disabled = true;
+    } else {
+      verdict = '<div class="chk"><span class="mk ok">✓</span><span class="lb">试采结果</span><span class="vl ok">' +
+        '收到 ' + got + ' 个样本，实测采样率约 ' + hz.toFixed(0) + ' Hz' +
+        (hz > 0 && hz < 25 ? '（偏低，可能是省电模式，建议关闭后重试）' : '') + '</span></div>';
+      $('btnStart').disabled = false;
+      $('s2').className = 'step done';
+    }
+
+    lines[lines.length - 1] = verdict;
+    $('trialResult').innerHTML = lines.join('');
+    $('btnAuth').disabled = false;
+    $('btnAuth').textContent = '重新授权 / 重新试采';
+  }, 4000);
+}
+
+/* ============================ 摄像头 ============================ */
+function camStreamLive() {
+  return !!(S.stream && S.stream.getVideoTracks &&
+            S.stream.getVideoTracks().some(t => t.readyState === 'live'));
+}
+
+function attachCamera(stream) {
+  S.stream = stream;
+  const v = $('preview');
+  v.srcObject = stream;
+  v.play().catch(() => {});
+}
+
+async function startCamera() {
+  if (camStreamLive()) return true;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    attachCamera(s);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function stopCamera() {
+  if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+  $('preview').srcObject = null;
+}
+
+function grabFrame() {
+  const v = $('preview');
+  if (!v || !v.videoWidth) return;
+  const c = document.createElement('canvas');
+  c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
+  c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
+  S.ring.push({ t: now() - S.t0, url: c.toDataURL('image/jpeg', 0.6) });
+  while (S.ring.length > CFG.RING_FRAMES) S.ring.shift();
+}
+
+function grabSweep() {
+  const v = $('preview');
+  if (!v || !v.videoWidth) return;
+  // 测试模式下不判速度：静止时速度恒为 0，会把扫描帧全部清空
+  if (S.mode !== 'test' && speed() < CFG.MIN_SPEED_MS) return;
+  const c = document.createElement('canvas');
+  c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
+  c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
+  S.sweeps.push({
+    t: Math.round(now() - S.t0), url: c.toDataURL('image/jpeg', 0.6),
+    lat: S.gps.lat, lon: S.gps.lon, spd: +(speed() * 3.6).toFixed(1)
+  });
+}
+
+function framesForEvent(peakT) {
+  const lo = peakT - CFG.KEEP_BEFORE_MS, hi = peakT + CFG.KEEP_AFTER_MS;
+  const cand = S.ring.filter(f => f.t >= lo && f.t <= hi);
+  if (!cand.length) return [];
+  if (cand.length <= CFG.MAX_FRAMES_PER_EVENT) return cand;
+  const step = (cand.length - 1) / (CFG.MAX_FRAMES_PER_EVENT - 1);
+  const out = [];
+  for (let i = 0; i < CFG.MAX_FRAMES_PER_EVENT; i++) out.push(cand[Math.round(i * step)]);
+  return out;
+}
+
+/* ============================ 信号处理与检测 ============================ */
+const COLOR = { '坑洼': '#A32D2D', '减速带': '#854F0B', '井盖': '#185FA5', '粗糙路面': '#3B6D11', '其他': '#888780', '误报': '#3B6D11', '未标定': '#9A9992' };
+
+function onMotion(ev) {
+  if (!S.recording) return;
+  const t = now();
+  const dt = S.lastT ? Math.min((t - S.lastT) / 1000, 0.2) : 1 / 60;
+  S.lastT = t; S.motionCount++;
+
+  const ai = ev.accelerationIncludingGravity;
+  if (!ai || ai.x === null) return;
+
+  const aG = Math.exp(-dt / CFG.TAU_GRAVITY);
+  S.g.x = S.g.x * aG + ai.x * (1 - aG);
+  S.g.y = S.g.y * aG + ai.y * (1 - aG);
+  S.g.z = S.g.z * aG + ai.z * (1 - aG);
+
+  let lx, ly, lz;
+  if (ev.acceleration && ev.acceleration.x !== null) {
+    lx = ev.acceleration.x; ly = ev.acceleration.y; lz = ev.acceleration.z;
+    S.g.x = ai.x - lx; S.g.y = ai.y - ly; S.g.z = ai.z - lz;
+  } else {
+    lx = ai.x - S.g.x; ly = ai.y - S.g.y; lz = ai.z - S.g.z;
+  }
+
+  const mag = Math.sqrt(lx * lx + ly * ly + lz * lz);
+  const aD = Math.exp(-dt / CFG.TAU_GRAVITY);
+  S.dc = S.dc * aD + mag * (1 - aD);
+  const hp = mag - S.dc;
+  const aS = Math.exp(-dt / CFG.TAU_SMOOTH);
+  S.smooth = S.smooth * aS + hp * (1 - aS);
+
+  // 重力方向投影：带符号的垂直分量
+  const gn = Math.sqrt(S.g.x ** 2 + S.g.y ** 2 + S.g.z ** 2) || 1e-6;
+  const vz = (lx * S.g.x + ly * S.g.y + lz * S.g.z) / gn;
+
+  const gyr = ev.rotationRate || {};
+  const spd = speed();
+  S.samples.push({
+    t: Math.round(t - S.t0), ax: +lx.toFixed(4), ay: +ly.toFixed(4), az: +lz.toFixed(4),
+    gx: gyr.beta, gy: gyr.gamma, gz: gyr.alpha,
+    lat: S.gps.lat, lon: S.gps.lon, spd: +spd.toFixed(3),
+    hp: +hp.toFixed(4), vz: +vz.toFixed(4)
+  });
+
+  detect(t, S.smooth, spd);
+  updateMetrics(t);
+  drawWave();
+}
+
+function detect(t, v, spd) {
+  S.win.push({ t, v });
+  while (S.win.length && t - S.win[0].t > CFG.NOISE_WIN_S * 1000) S.win.shift();
+
+  const abs = S.win.map(w => Math.abs(w.v)).sort((a, b) => a - b);
+  const q = abs.length ? abs[Math.floor((abs.length - 1) * CFG.NOISE_Q)] : 0.02;
+  const floor = Math.max(q, 0.02);
+  const thr = Math.max(CFG.MIN_THRESHOLD, CFG.NOISE_K * floor);
+  S.thr = thr;
+
+  const moving = (S.mode === 'test') || (spd >= CFG.MIN_SPEED_MS);
+
+  if (!S.inEvent) {
+    if (v > thr) {
+      if (!moving) {
+        // 超了门限却没通过速度门控：记一笔，并在界面上明确提示。
+        // 上一版就是在这里静默丢弃，导致"信号明明很强却一个事件都没有"。
+        if (!S.blockEp) { S.blockEp = true; S.gateBlocked++; updateGateWarn(); }
+      } else {
+        S.blockEp = false;
+        if ((t - S.lastEnd) > CFG.REFRACTORY_MS) {
+          S.inEvent = true;
+          S.cur = { t0: t, peak: 0, sumSq: 0, n: 0, sig: [] };
+        }
+      }
+    } else {
+      S.blockEp = false;
+    }
+  } else {
+    const c = S.cur;
+    if (v > c.peak) c.peak = v;
+    c.sumSq += v * v; c.n++;
+    if (c.sig.length < 200) c.sig.push(+v.toFixed(3));
+    if ((v < thr * CFG.RELEASE_RATIO && t - c.t0 > 60) || (t - c.t0) > CFG.MAX_EVENT_MS) {
+      const dur = t - c.t0;
+      const e = {
+        id: S.events.length,
+        t: Math.round(c.t0 - S.t0), duration: Math.round(dur),
+        peak: +c.peak.toFixed(2), rms: +Math.sqrt(c.sumSq / Math.max(c.n, 1)).toFixed(2),
+        lat: S.gps.lat, lon: S.gps.lon, spd: +(spd * 3.6).toFixed(1),
+        auto: autoType(c.peak, dur), manual: null,
+        frames: framesForEvent(c.t0 - S.t0)
+      };
+      S.events.push(e);
+      S.inEvent = false; S.cur = null; S.lastEnd = t;
+      renderEvents();
+    }
+  }
+}
+
+function autoType(peak, durMs) {
+  if (durMs > 620) return '粗糙路面';
+  if (durMs >= 280) return '减速带';
+  if (peak > 9) return '坑洼';
+  return '井盖';
+}
+
+function updateGateWarn() {
+  const el = $('gateWarn');
+  if (S.mode === 'test') {
+    if (S.gateBlocked > 0) {
+      el.innerHTML = '测试模式已关闭速度门控。';
+      el.className = 'gatewarn on';
+    } else { el.className = 'gatewarn'; }
+    return;
+  }
+  if (S.gateBlocked === 0) { el.className = 'gatewarn'; return; }
+  const spdTxt = S.spdUsable
+    ? '当前最大速度 ' + (S.spdMax * 3.6).toFixed(1) + ' km/h'
+    : '定位速度全程为 0（静止或室内无有效速度）';
+  el.innerHTML = '<b>有 ' + S.gateBlocked + ' 段振动超过了门限，但被速度门控拦下，未记为事件。</b><br>'
+    + '原因：' + spdTxt + '，未达到 8 km/h 的判定门槛。<br>'
+    + '如果你确实在骑行，说明定位速度不可靠，可改用手持/静止测试模式；'
+    + '如果是在原地模拟，请选测试模式。';
+  el.className = 'gatewarn on';
+}
+
+/* ============================ 绘制 ============================ */
+let rafPending = false;
+const cv = $('wave'), ctx = cv.getContext('2d');
+function drawWave() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; paint(); });
+}
+
+function paint() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const SPAN = 8000, mid = h / 2, scale = h / 2 / 15;
+  const tN = S.samples.length ? S.samples[S.samples.length - 1].t : 0;
+  const tA = tN - SPAN;
+
+  ctx.strokeStyle = '#E3E2DD'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+  const thr = S.thr || CFG.MIN_THRESHOLD;
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = '#D0854F';
+  ctx.beginPath();
+  ctx.moveTo(0, mid - thr * scale); ctx.lineTo(w, mid - thr * scale);
+  ctx.moveTo(0, mid + thr * scale); ctx.lineTo(w, mid + thr * scale);
+  ctx.stroke(); ctx.setLineDash([]);
+
+  ctx.strokeStyle = '#185FA5'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  let started = false;
+  for (let i = S.samples.length - 1; i >= 0; i--) {
+    const s = S.samples[i];
+    if (s.t < tA) break;
+    const x = w - (tN - s.t) / SPAN * w;
+    const y = mid - Math.max(-15, Math.min(15, s.hp)) * scale;
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = '#A32D2D'; ctx.lineWidth = 1.5;
+  for (const e of S.events) {
+    if (e.t < tA) continue;
+    const x = w - (tN - e.t) / SPAN * w;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 7); ctx.stroke();
+  }
+}
+
+function updateMetrics(t) {
+  $('mSpeed').innerHTML = (speed() * 3.6).toFixed(0) + '<small>km/h</small>';
+  $('mTime').innerHTML = ((t - S.t0) / 1000).toFixed(0) + '<small>s</small>';
+  const secs = (t - S.t0) / 1000;
+  $('mRate').innerHTML = (secs > 1 ? (S.samples.length / secs).toFixed(0) : 0) + '<small>Hz</small>';
+  $('mEvent').textContent = S.events.length;
+}
+
+/* ============================ 标定与列表 ============================ */
+function renderEvents() {
+  const box = $('evList');
+  if (!S.events.length) { box.innerHTML = '<p class="empty">尚未检出事件</p>'; return; }
+  box.innerHTML = S.events.slice().reverse().map(e => {
+    const t = e.manual || e.auto;
+    const c = COLOR[t] || '#888780';
+    const thumb = e.frames && e.frames.length
+      ? '<img src="' + e.frames[Math.floor(e.frames.length / 2)].url + '" alt="事件画面">'
+      : '<img alt="无画面">';
+    const badge = e.manual
+      ? '<span class="badge g">已标定</span>'
+      : '<span class="badge">自动判定，待确认</span>';
+    return '<div class="ev" data-id="' + e.id + '">'
+      + '<div class="ev-top">' + thumb
+      + '<div class="info">'
+      + '<p class="tt" style="color:' + c + '">' + t + badge + '</p>'
+      + '峰值 ' + e.peak + ' m/s²<br>时长 ' + e.duration + 'ms · ' + e.spd + 'km/h · ' + (e.t / 1000).toFixed(0) + 's'
+      + '<br>画面 ' + (e.frames ? e.frames.length : 0) + ' 帧'
+      + '</div></div>'
+      + '<div class="labels">'
+      + '<button class="lg-p" data-l="坑洼">坑洼</button>'
+      + '<button class="lg-b" data-l="减速带">减速带</button>'
+      + '<button class="lg-m" data-l="井盖">井盖</button>'
+      + '<button class="lg-r" data-l="粗糙路面">粗糙</button>'
+      + '<button class="lg-n" data-l="误报">误报</button>'
+      + '</div></div>';
+  }).join('');
+
+  box.querySelectorAll('.ev').forEach(el => {
+    el.querySelectorAll('button[data-l]').forEach(b => {
+      b.onclick = () => {
+        const e = S.events[+el.dataset.id];
+        if (!e) return;
+        e.manual = b.dataset.l;
+        flash('已标为「' + b.dataset.l + '」');
+        renderEvents();
+      };
+    });
+  });
+}
+
+/* ============================ 采集控制 ============================ */
+async function start() {
+  clearErr();
+
+  // 摄像头必须在点击手势内同步发起 —— await 之后手势失效，iOS 会静默拒绝。
+  const camPromise = camStreamLive() ? Promise.resolve(true) : startCamera();
+
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const r = await DeviceMotionEvent.requestPermission();
+      if (r !== 'granted') {
+        showErr('传感器授权失败', '请在 设置 → Safari → 运动与方向访问 中允许后重试。');
+        return;
+      }
+    }
+  } catch (e) { showErr('传感器授权异常', e.message); return; }
+
+  S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
+
+  Object.assign(S, {
+    recording: true, samples: [], events: [], win: [], ring: [], sweeps: [],
+    inEvent: false, cur: null, lastEnd: 0, lastT: 0, motionCount: 0,
+    g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0, thr: CFG.MIN_THRESHOLD,
+    prevFix: null, t0: now(),
+    gateBlocked: 0, blockEp: false, spdMax: 0, spdUsable: false
+  });
+  $('gateWarn').className = 'gatewarn';
+
+  window.addEventListener('devicemotion', onMotion);
+  if (!S.gpsWatch) {
+    S.gpsWatch = navigator.geolocation.watchPosition(p => {
+      const c = p.coords;
+      let spd = c.speed;
+      if ((spd === null || isNaN(spd)) && S.prevFix) {
+        const d = haversine(S.prevFix, { lat: c.latitude, lon: c.longitude });
+        const dt = (p.timestamp - S.prevFix.ts) / 1000;
+        if (dt > 0.5) spd = d / dt;
+      }
+      S.prevFix = { lat: c.latitude, lon: c.longitude, ts: p.timestamp };
+      const sp = (spd === null || isNaN(spd)) ? 0 : spd;
+      S.gps = { lat: +c.latitude.toFixed(7), lon: +c.longitude.toFixed(7), spd, acc: c.accuracy };
+      if (sp > S.spdMax) S.spdMax = sp;
+      if (sp > 0.5) S.spdUsable = true;
+    }, err => { if (!S.gps.lat) showErr('定位中断', geoMsg(err.code, err.message)); },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+  }
+
+  const camOk = await camPromise;
+  if (camOk && camStreamLive()) {
+    S.frameTimer = setInterval(grabFrame, CFG.FRAME_MS);
+    S.sweepTimer = setInterval(grabSweep, CFG.SWEEP_MS);
+  } else {
+    showErr('摄像头未启用', '将只采集 IMU 数据，无法做视觉自动标注。请检查地址栏的摄像头权限，'
+      + '回到第 2 步重新授权后再开始。');
+  }
+
+  try { if ('wakeLock' in navigator) S.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+
+  // 看门狗：8 秒内没有任何传感器数据就提示
+  S._wd = setTimeout(() => {
+    if (S.recording && S.motionCount === 0) {
+      showErr('传感器无数据', '已开始 8 秒但没收到任何运动数据。请检查本页是否为 HTTPS，以及浏览器「运动传感器」权限。');
+    }
+  }, 8000);
+
+  $('ctrl').innerHTML = '<button class="stop" id="btnStart">结束采集</button>';
+  $('btnStart').onclick = stop;
+  $('liveCard').classList.remove('hidden');
+  $('labelCard').classList.add('hidden');
+  $('exportCard').classList.add('hidden');
+  $('s3').className = 'step done';
+  $('modeHint').textContent = S.mode === 'test'
+    ? '当前：手持 / 静止测试模式，速度门控已关闭。'
+    : '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+  renderEvents();
+}
+
+function stop() {
+  S.recording = false;
+  window.removeEventListener('devicemotion', onMotion);
+  clearTimeout(S._wd);
+  if (S.frameTimer) { clearInterval(S.frameTimer); S.frameTimer = null; }
+  if (S.sweepTimer) { clearInterval(S.sweepTimer); S.sweepTimer = null; }
+  if (S.gpsWatch) { navigator.geolocation.clearWatch(S.gpsWatch); S.gpsWatch = null; }
+  if (S.wakeLock) { S.wakeLock.release().catch(() => {}); S.wakeLock = null; }
+  stopCamera();
+
+  $('ctrl').innerHTML = '<button class="primary" id="btnStart">开始新一轮采集</button>';
+  $('btnStart').onclick = start;
+  $('labelCard').classList.remove('hidden');
+  $('exportCard').classList.remove('hidden');
+  $('liveCard').classList.add('hidden');
+  $('s4').className = 'step done';
+  $('s5').className = 'step done';
+  renderEvents();
+  paint();
+}
+
+/* ============================ 导出 ============================ */
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes());
+}
+function download(name, blob) {
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+function csvOf(rows) { return rows.join('\n'); }
+
+function rawCsv() {
+  const head = 't_ms,ax,ay,az,gx,gy,gz,lat,lon,speed_ms,hp,vz';
+  const body = S.samples.map(s =>
+    [s.t, s.ax, s.ay, s.az, s.gx, s.gy, s.gz, s.lat, s.lon, s.spd, s.hp, s.vz].join(','));
+  return head + '\n' + csvOf(body);
+}
+
+function eventCsv() {
+  const head = 'id,t_ms,duration_ms,peak,rms,lat,lon,speed_kmh,auto_label,final_label,frames';
+  const body = S.events.map(e =>
+    [e.id, e.t, e.duration, e.peak, e.rms, e.lat, e.lon, e.spd, e.auto,
+     e.manual || '', e.frames ? e.frames.length : 0].join(','));
+  return head + '\n' + csvOf(body);
+}
+
+function sweepCsv() {
+  const head = 't_ms,lat,lon,speed_kmh,frame';
+  const body = S.sweeps.map(s =>
+    [s.t, s.lat, s.lon, s.spd, 'frames/sweep_t' + s.t + '.jpg'].join(','));
+  return head + '\n' + csvOf(body);
+}
+
+function metaObj() {
+  const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
+  return {
+    version: '0.2', exported_at: new Date().toISOString(),
+    device: navigator.userAgent,
+    sample_count: S.samples.length, event_count: S.events.length,
+    sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
+    duration_s: +dur.toFixed(1),
+    sample_rate_hz: dur > 0 ? +(S.samples.length / dur).toFixed(1) : null,
+    camera_enabled: !!S.stream || !!S.events.some(e => e.frames && e.frames.length) || S.sweeps.length > 0,
+    frame_size: [CFG.FRAME_W, CFG.FRAME_H],
+    labels_available: ['坑洼', '减速带', '井盖', '粗糙路面', '误报'],
+    labelled_events: S.events.filter(e => e.manual).length,
+    collection: {
+      mode: S.mode === 'test' ? 'handheld_test' : 'ride',
+      mode_note: S.mode === 'test'
+        ? '手持/静止测试：速度门控已关闭，速度读数无意义'
+        : '骑行/车载：速度门控 8 km/h 生效',
+      speed_max_kmh: +(S.spdMax * 3.6).toFixed(1),
+      speed_usable: S.spdUsable,
+      gate_blocked_segments: S.gateBlocked,
+      gate_blocked_note: S.gateBlocked > 0 && S.mode !== 'test'
+        ? '有 ' + S.gateBlocked + ' 段振动超过门限但被速度门控拦下，未记为事件'
+        : '',
+    },
+    detection_criteria: {
+      step1: '线性加速度 = 原始加速度 - 重力估计（各轴 tau=0.5s 低通）',
+      step2: '幅值 mag = |线性加速度|',
+      step3: '去直流 hp = mag - ema(mag, tau=0.5s)',
+      step4: '平滑 smooth = ema(hp, tau=10ms)',
+      step5: '噪声底 = quantile(|smooth|, 20%)，取最近 3 秒尾部窗口',
+      step6: '门限 = max(1.2, 4 × 噪声底)',
+      step7: 'start: 速度 ≥ 8 km/h (测试模式跳过) 且 smooth > 门限 且 距上次结束 > 600 ms',
+      step8: 'end: smooth < 门限 × 0.5 且持续 ≥ 60 ms，或事件已达 3000 ms',
+      why_quantile: '用分位数而非滚动标准差：事件自身会抬高局部标准差、把自己屏蔽掉',
+    },
+    why_sweep_frames: '裂缝等病害不引起垂直颠簸，不会触发事件抓帧。' +
+      '若只保留事件帧，视觉将永远无法贡献裂缝类病害，因此必须周期性扫描抓帧。',
+    method: {
+      gravity_tau_s: CFG.TAU_GRAVITY, smooth_tau_s: CFG.TAU_SMOOTH,
+      noise_floor: 'quantile(|x|, ' + (CFG.NOISE_Q * 100) + '%) over ' + CFG.NOISE_WIN_S + 's centered window',
+      peak_rule: 'height = max(' + CFG.MIN_THRESHOLD + ', ' + CFG.NOISE_K + ' x noise_floor)',
+      speed_gate_kmh: +(CFG.MIN_SPEED_MS * 3.6).toFixed(1),
+      vertical_component: '线性加速度在重力方向上的投影，保留正负号',
+      note: '浏览器 devicemotion 通常约 60Hz；请按实际时间戳重采样至 100Hz 后分析'
+    },
+    events: S.events.map(e => ({
+      id: e.id, t_ms: e.t, duration_ms: e.duration, peak: e.peak, rms: e.rms,
+      lat: e.lat, lon: e.lon, speed_kmh: e.spd,
+      auto_label: e.auto, final_label: e.manual || e.auto, manual: !!e.manual,
+      frames: (e.frames || []).map(f => ({ t_ms: Math.round(f.t), file: 'frames/ev' + e.id + '_t' + Math.round(f.t) + '.jpg' }))
+    })),
+    sweeps: S.sweeps.map(s => ({
+      t_ms: s.t, lat: s.lat, lon: s.lon, speed_kmh: s.spd,
+      file: 'frames/sweep_t' + s.t + '.jpg'
+    }))
+  };
+}
+
+/* 极简 ZIP 打包（STORE 模式，不压缩，避免引入外部库） */
+function crc32(u8) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) {
+    crc ^= u8[i];
+    for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function b64ToU8(b64) {
+  const bin = atob(b64.split(',')[1]);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function makeZip(files) {
+  const enc = new TextEncoder();
+  const parts = [], cds = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = f.data;
+    const crc = crc32(data);
+    const lh = new Uint8Array(30 + name.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true); lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true); lv.setUint16(12, 0, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+    lv.setUint16(26, name.length, true); lv.setUint16(28, 0, true);
+    lh.set(name, 30);
+    parts.push(lh, data);
+
+    const cd = new Uint8Array(46 + name.length);
+    const cv2 = new DataView(cd.buffer);
+    cv2.setUint32(0, 0x02014b50, true);
+    cv2.setUint16(4, 20, true); cv2.setUint16(6, 20, true);
+    cv2.setUint16(8, 0x0800, true); cv2.setUint16(10, 0, true);
+    cv2.setUint16(12, 0, true); cv2.setUint16(14, 0, true);
+    cv2.setUint32(16, crc, true);
+    cv2.setUint32(20, data.length, true); cv2.setUint32(24, data.length, true);
+    cv2.setUint16(28, name.length, true);
+    cv2.setUint16(30, 0, true); cv2.setUint16(32, 0, true);
+    cv2.setUint16(34, 0, true); cv2.setUint16(36, 0, true);
+    cv2.setUint32(38, 0, true); cv2.setUint32(42, offset, true);
+    cd.set(name, 46);
+    cds.push(cd);
+    offset += lh.length + data.length;
+  }
+  const cdSize = cds.reduce((a, c) => a + c.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev2 = new DataView(eocd.buffer);
+  ev2.setUint32(0, 0x06054b50, true);
+  ev2.setUint16(8, files.length, true); ev2.setUint16(10, files.length, true);
+  ev2.setUint32(12, cdSize, true); ev2.setUint32(16, offset, true);
+  return new Blob([...parts, ...cds, eocd], { type: 'application/zip' });
+}
+
+function exportZip() {
+  const enc = new TextEncoder();
+  const files = [
+    { name: 'samples.csv', data: enc.encode(rawCsv()) },
+    { name: 'events.csv', data: enc.encode(eventCsv()) },
+    { name: 'sweeps.csv', data: enc.encode(sweepCsv()) },
+    { name: 'meta.json', data: enc.encode(JSON.stringify(metaObj(), null, 2)) }
+  ];
+  let nEv = 0, nSw = 0;
+  for (const e of S.events) {
+    for (const f of (e.frames || [])) {
+      files.push({ name: 'frames/ev' + e.id + '_t' + Math.round(f.t) + '.jpg', data: b64ToU8(f.url) });
+      nEv++;
+    }
+  }
+  for (const s of S.sweeps) {
+    files.push({ name: 'frames/sweep_t' + s.t + '.jpg', data: b64ToU8(s.url) });
+    nSw++;
+  }
+  download('roadcheck_' + stamp() + '.zip', makeZip(files));
+  $('zipHint').textContent = '已导出：样本 ' + S.samples.length + ' 条、事件 ' + S.events.length +
+    ' 个（画面 ' + nEv + ' 帧）、周期扫描 ' + nSw + ' 帧。周期扫描帧是视觉识别裂缝的唯一来源，务必保留。';
+}
+
+document.querySelectorAll('input[name=mode]').forEach(r => {
+  r.onchange = () => {
+    S.mode = r.value;
+    $('modeHint').textContent = S.mode === 'test'
+      ? '当前：手持 / 静止测试模式，速度门控已关闭。'
+      : '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+    updateGateWarn();
+  };
+});
+
+$('btnAuth').onclick = authorize;
+$('btnStart').onclick = start;
+$('btnZip').onclick = exportZip;
+$('btnJson').onclick = () => download('roadcheck_' + stamp() + '.json',
+  new Blob([JSON.stringify({ meta: metaObj(), samples: S.samples, events: S.events.map(e => ({ ...e, frames: undefined })) }, null, 2)],
+    { type: 'application/json' }));
+$('btnRaw').onclick = () => download('roadcheck_raw_' + stamp() + '.csv', new Blob([rawCsv()], { type: 'text/csv;charset=utf-8' }));
+$('btnEv').onclick = () => download('roadcheck_events_' + stamp() + '.csv', new Blob([eventCsv()], { type: 'text/csv;charset=utf-8' }));
+$('btnBack').onclick = () => $('labelCard').scrollIntoView({ behavior: 'smooth' });
+$('btnReset').onclick = () => {
+  S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
+  S.gateBlocked = 0; S.blockEp = false; S.spdMax = 0; S.spdUsable = false;
+  $('exportCard').classList.add('hidden');
+  $('labelCard').classList.add('hidden');
+  $('gateWarn').className = 'gatewarn';
+  renderEvents(); paint();
+  $('mSpeed').innerHTML = '0<small>km/h</small>';
+  $('mTime').innerHTML = '0<small>s</small>';
+  $('mRate').innerHTML = '0<small>Hz</small>';
+  $('mEvent').textContent = '0';
+  $('s4').className = 'step'; $('s5').className = 'step';
+};
+
+S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
+$('modeHint').textContent = '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+probe();
+</script>
+</body>
+</html>

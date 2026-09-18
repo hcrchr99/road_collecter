@@ -1,0 +1,42 @@
+# ---- 生成物：可由脚本重新生成，不入库 ----
+demo_pack.zip
+demo_samples.csv
+sample_run.csv
+out/
+vis/
+fused/
+out_selftest/
+out_fused_selftest/
+
+# ---- 个人采集数据：含真实轨迹坐标，绝不入库 ----
+# 采集包内含原始 GPS 轨迹，能反推个人出行规律与居住地，属敏感信息。
+# 详见 README「数据与合规」一节。
+*.zip
+userdata/
+collect_packs/
+# pack_inspect.txt 会打印真实采集点的经纬度范围，同样不入库
+pack_inspect.txt
+user_pipeline.txt
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时文件 ----
+*.tmp
+~$*
+_*.txt
+!reports/*.txt

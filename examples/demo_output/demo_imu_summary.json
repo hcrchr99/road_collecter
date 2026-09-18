@@ -1,0 +1,29 @@
+{
+  "input": "demo_samples.csv",
+  "samples": 12000,
+  "source_fs_hz": 100.0,
+  "track_km": 0.576,
+  "events": 9,
+  "clusters": 9,
+  "type_distribution": {
+    "坑洼": 3,
+    "减速带": 3,
+    "井盖": 3
+  },
+  "road_health_index": 13.8,
+  "priority_distribution": {
+    "高": 3,
+    "低": 3,
+    "中": 3
+  },
+  "method": {
+    "resample_hz": 100.0,
+    "bandpass_hz": [
+      1.0,
+      20.0
+    ],
+    "window_s": 0.64,
+    "peak_rule": "height=max(1.2, 4.0 * quantile(|x|, 20%) over 3s centered window)",
+    "cluster_eps_m": 15.0
+  }
+}

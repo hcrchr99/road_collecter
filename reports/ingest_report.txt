@@ -1,0 +1,15 @@
+﻿宸茬敓鎴?sample_run.csv锛?000 琛?脳 11 鍒楋紝娉ㄥ叆鐪熷€间簨浠?10 涓?
+鍒楀悕锛歵_ms, ax, ay, az, gx, gy, gz, lat, lon, speed_ms, hp
+杈撳叆 9000 鐐?(绾?100.0 Hz) -> 閲嶉噰鏍?9000 鐐?@ 100 Hz
+妫€鍑哄€欓€変簨浠?10 涓?
+閬撹矾鍋ュ悍搴︽寚鏁?RHI = 4.5  |  鍏绘姢浼樺厛绾?{'楂?: 4, '浣?: 3, '涓?: 3}
+杈撳嚭锛歰ut/{events.csv, events.geojson, summary.json}
+exit=0
+
+Name           Length
+----           ------
+events.csv       1306
+events.geojson   4277
+summary.json      573
+
+
