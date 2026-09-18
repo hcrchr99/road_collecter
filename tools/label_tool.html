@@ -47,11 +47,12 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
 .b-done{background:var(--green-bg);color:var(--green);}
 .b-todo{background:#F1EFE8;color:var(--muted);}
 .b-fp{background:var(--red-bg);color:var(--red);}
-.viewer{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
-@media(max-width:860px){.viewer{grid-template-columns:1fr;}}
+.viewer{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start;}
+.viewer>div{min-width:0;}
+@media(max-width:860px){.viewer{grid-template-columns:minmax(0,1fr);}}
 #stage{background:#22211F;border-radius:10px;min-height:340px;display:flex;align-items:center;
-  justify-content:center;overflow:hidden;position:relative;}
-#stage img{max-width:100%;max-height:64vh;display:block;}
+  justify-content:center;overflow:hidden;position:relative;width:100%;}
+#stage img{max-width:100%;max-height:62vh;width:auto;height:auto;object-fit:contain;display:block;}
 #stage .ph{color:#8B8A85;font-size:13px;padding:40px;text-align:center;}
 #film{display:flex;gap:6px;overflow-x:auto;padding:9px 0;}
 #film img{height:56px;border-radius:6px;border:2px solid transparent;cursor:pointer;flex:none;opacity:.62;}
@@ -355,6 +356,7 @@ async function loadZip(file) {
     }
 
     restoreProgress();
+    ensureSelection();
     render();
     $('whoCard').classList.remove('hidden');
     $('workCard').classList.remove('hidden');
@@ -586,13 +588,35 @@ function renderFrDetail() {
 }
 
 /* ============ 交互 ============ */
-function selectEv(i) { P.selEv = i; saveProgress(); render(); }
-function selectFr(i) { P.selFr = i; saveProgress(); render(); }
+function selectEv(i) {
+  P.selEv = i; saveProgress(); render();
+  const tr = document.querySelector('#evListBox tr[data-i="' + i + '"]');
+  if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+}
+function selectFr(i) {
+  P.selFr = i; saveProgress(); render();
+  const tr = document.querySelector('#frListBox tr[data-x="' + i + '"]');
+  if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+}
 
-$('tabEv').onclick = () => { P.tab = 'ev'; $('tabEv').classList.add('on'); $('tabFr').classList.remove('on');
-  $('paneEv').classList.remove('hidden'); $('paneFr').classList.add('hidden'); };
-$('tabFr').onclick = () => { P.tab = 'fr'; $('tabFr').classList.add('on'); $('tabEv').classList.remove('on');
-  $('paneFr').classList.remove('hidden'); $('paneEv').classList.add('hidden'); };
+/* 切页签时，如果还没选过条目，自动选中第一条 —— 否则按箭头会「没反应」 */
+function ensureSelection() {
+  if (P.tab === 'ev' && P.selEv < 0 && P.events.length) P.selEv = P.events[0].event_id;
+  if (P.tab === 'fr' && P.selFr < 0 && P.frames.length) P.selFr = 0;
+}
+
+$('tabEv').onclick = () => {
+  P.tab = 'ev';
+  $('tabEv').classList.add('on'); $('tabFr').classList.remove('on');
+  $('paneEv').classList.remove('hidden'); $('paneFr').classList.add('hidden');
+  ensureSelection(); render();
+};
+$('tabFr').onclick = () => {
+  P.tab = 'fr';
+  $('tabFr').classList.add('on'); $('tabEv').classList.remove('on');
+  $('paneFr').classList.remove('hidden'); $('paneEv').classList.add('hidden');
+  ensureSelection(); render();
+};
 
 $('btnFP').onclick = () => {
   const e = P.events.find(v => v.event_id === P.selEv); if (!e) return;
@@ -646,10 +670,22 @@ document.addEventListener('keydown', ev => {
     else { const f = P.frames[P.selFr]; if (f) { f.confidence = c; saveProgress(); render(); } }
     ev.preventDefault(); return;
   }
-  if (k === 'ArrowRight' || k === 'ArrowLeft') {
-    const f = P.frames[P.selFr]; if (!f) return;
-    const nx = k === 'ArrowRight' ? Math.min(P.selFr + 1, P.frames.length - 1) : Math.max(P.selFr - 1, 0);
-    selectFr(nx); ev.preventDefault();
+  if (k === 'ArrowRight' || k === 'ArrowLeft' || k === 'ArrowDown' || k === 'ArrowUp') {
+    /* 上下箭头等价于 J/K；左右箭头在两类列表里都做「上一条/下一条」。
+       注意 selFr/selEv 初始为 -1：此时按箭头应落到第一项，而不是毫无反应。 */
+    const fwd = (k === 'ArrowRight' || k === 'ArrowDown');
+    if (P.tab === 'ev') {
+      if (!P.events.length) return;
+      const i = P.events.findIndex(v => v.event_id === P.selEv);
+      const nx = i < 0 ? 0 : Math.min(Math.max(i + (fwd ? 1 : -1), 0), P.events.length - 1);
+      selectEv(P.events[nx].event_id);
+    } else {
+      if (!P.frames.length) return;
+      const nx = P.selFr < 0 ? 0 : Math.min(Math.max(P.selFr + (fwd ? 1 : -1), 0), P.frames.length - 1);
+      selectFr(nx);
+    }
+    ev.preventDefault();
+    return;
   }
 });
 
