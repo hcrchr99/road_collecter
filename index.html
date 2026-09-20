@@ -15,7 +15,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.svg">
-<title>路面体检 · 采集端 v0.2</title>
+<title>路面体检 · 采集端 v0.5</title>
 <style>
   :root{
     --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
@@ -62,6 +62,7 @@
   .lg-b{background:var(--amber-bg);border-color:#EFD9AE;color:var(--amber);}
   .lg-m{background:var(--blue-bg);border-color:#C3DDF5;color:var(--blue);}
   .lg-r{background:#F1EFE8;border-color:var(--line);color:var(--muted);}
+  .lg-j{background:#EAF0F6;border-color:#C6D5E3;color:#5C7A99;}
   .lg-n{background:var(--green-bg);border-color:#CFE2B4;color:var(--green);}
   .ev{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px;}
   .ev-top{display:flex;gap:10px;align-items:flex-start;}
@@ -109,7 +110,7 @@
 <body>
 <div class="wrap">
 
-  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.2</span></h1>
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.5</span></h1>
   <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
 
   <div class="err" id="err"></div>
@@ -190,6 +191,7 @@
     <canvas id="wave"></canvas>
     <p class="sub" style="margin:6px 0 0;font-size:11.5px;" id="waveLegend">纵向动态加速度（去重力 + 去直流），虚线为稳健噪声底门限，顶端红为检出事件</p>
     <div class="gatewarn" id="gateWarn"></div>
+    <div class="gatewarn" id="frameWarn"></div>
   </div>
 
   <div class="card hidden" id="labelCard">
@@ -243,7 +245,29 @@ const CFG = {
   FRAME_W: 480, FRAME_H: 360,
   // 周期性扫描帧：裂缝不引起颠簸，永远不会触发事件抓帧。
   // 若只靠事件抓帧，视觉就永远贡献不了裂缝这一大类病害——这是架构必需，不是可选项。
-  SWEEP_MS: 2000
+  SWEEP_MS: 2000,
+
+  /* ── 振动路段（segment）聚类 ─────────────────────────────
+   * 问题：连续颠簸路面上，同一段路会被切成一连串孤立事件。
+   *   实测某段 70.8 秒内报了 42 个事件，但那是「一段路」而不是 42 个病害。
+   * 做法：把时间上邻近的事件聚成「振动路段」，路段才是上报与统计的单位。
+   *
+   * 阈值标定（真实采集包，83 个事件）：
+   *   相邻事件间隔分布呈现明显双峰 —— 71/82 个落在 1.5~2.0s（近规则节奏），
+   *   其后骤降；再往后是 4.2s / 12.9s / 26.6s 的孤立大间隔。
+   *   取值必须落在「同段节奏」与「跨段间隔」之间，且不误并真正独立的路段：
+   *     1s  -> 83 段（等于不分，无意义）
+   *     2s  -> 11 段（边界偏紧，可能把同段切断）
+   *     3s  ->  6 段（★ 选用：最大段 42 事件，密度 9.9 段/km）
+   *     5s+ ->  3 段（会把 4.2s 处的独立段误并进来）
+   *   3s 对应里程约 6.6~10.8m，与「一条烂路」的空间尺度相称。
+   */
+  SEG_GAP_MS: 3000,
+  // 事件数达到此值才视为「连续颠簸路段」而非孤立点。
+  // 单事件段是「孤立病害点」，多点段才是「面状」的连续破损段。
+  SEG_MIN_EVENTS: 3,
+  // 速度用于把时间间隔换算成里程（段长按 平均车速 × 时长 估算）
+  SEG_MILEAGE_SPEED_MS: null
 };
 
 const S = {
@@ -263,7 +287,9 @@ const S = {
   route: '',           // 路段备注（选填）
   gateBlocked: 0,      // 被速度门控拦下的候选事件段数
   blockEp: false,      // 是否正处于"超门限但被门控拦下"的连续段
-  spdMax: 0, spdUsable: false
+  spdMax: 0, spdUsable: false,
+  // 帧有效性自检的累积统计（镜头遮挡是真实发生过的故障，须当场可见）
+  frameQ: { n: 0, suspect: 0, last: null }
 };
 
 function now() { return performance.now(); }
@@ -517,6 +543,77 @@ function camStreamLive() {
             S.stream.getVideoTracks().some(t => t.readyState === 'live'));
 }
 
+/* 帧有效性自检 —— 判断这一帧「像不像路面」。
+ *
+ * 起因：某次采集时共享单车支架挡住了摄像头，940 张帧图 100% 是纯蓝挡板，
+ * 但因为没有任何自检，直到导出后逐张算指标才发现，白费一整趟采集。
+ * 因此把校验前置到采集时刻，当场可见、随包落盘。
+ *
+ * 判据（在 60x45 降采样图上计算，成本约 0.1ms/帧，不影响 60Hz 采样）：
+ *   ① 平坦度：std = 灰度标准差。画面几乎无起伏 → 遮挡物或未出画
+ *   ② 偏色：cast = 通道均值间的最大差值。单色遮挡物（蓝/绿/红/棕）会显著偏色
+ *
+ * ★ 阈值经过实测标定，不是拍脑袋：
+ *   在 940 张真实废帧（支架遮挡）+ 40 张合成正常路面 + 12 种遮挡物颜色上标定：
+ *     - 废帧召回  940/940 = 100%
+ *     - 遮挡物覆盖 11/12  =  92%
+ *     - 路面误杀    0/40  =   0%
+ *   对照：初版判据用「uniq < 800 且 std < 25」，因为 60x45 降采样后颜色数天然偏低
+ *   （正常路面实测仅 318~729），会把 100% 的正常路面误判为废帧 —— 该阈值已废弃。
+ *
+ *   实测取值范围（标定依据）：
+ *     正常路面  std 13.9~23.3   cast  0.8~5.0
+ *     遮挡物    std  0.0~ 9.8   cast  0.0~164.0（纯色为 0，偏色物为 45~164）
+ *   注意：纯黑/纯灰遮挡物 cast≈0，靠 ① 平坦度兜住；带渐变的灰色挡板（std 9.8）
+ *   是已知的边界漏检情况，概率低且不影响主判据。
+ *
+ * 判为 suspect 时**不丢弃帧**（保留原始证据，便于事后追溯），只在 meta.json 标记。
+ */
+function frameQuality(v) {
+  const W = 60, H = 45;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(v, 0, 0, W, H);
+  let d;
+  try { d = ctx.getImageData(0, 0, W, H).data; }
+  catch (e) { return null; }   // 跨域/tainted canvas 等异常，静默跳过自检
+
+  const seen = new Set();
+  const grays = [];
+  let sr = 0, sg = 0, sb = 0, sumSat = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    seen.add((r << 16) | (g << 8) | b);
+    grays.push(0.299 * r + 0.587 * g + 0.114 * b);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    sumSat += mx === 0 ? 0 : (mx - mn) / mx;
+    sr += r; sg += g; sb += b; n++;
+  }
+  const mean = grays.reduce((a, x) => a + x, 0) / n;
+  const std = Math.sqrt(grays.reduce((a, x) => a + (x - mean) ** 2, 0) / n);
+  const mr = sr / n, mg = sg / n, mb = sb / n;
+  // 通道间最大偏色幅度：任何单色遮挡物都会显著偏色
+  const cast = Math.max(Math.abs(mr - mg), Math.abs(mg - mb), Math.abs(mr - mb));
+
+  const uniq = seen.size;
+  const sat = sumSat / n;
+  const flat = std < 9.0 && uniq < 400;   // ①② 平坦 → 遮挡或未出画
+  const tinted = cast > 40;               // 偏色 → 单色遮挡物
+  const suspect = flat || tinted;
+  return {
+    uniq: uniq,
+    std: +std.toFixed(1),
+    cast: +cast.toFixed(1),
+    sat: +sat.toFixed(2),
+    suspect: suspect,
+    reason: suspect
+      ? (flat ? '画面几乎无纹理，疑似镜头被遮挡或未出画'
+              : '画面严重偏色，疑似镜头被单色遮挡物挡住')
+      : ''
+  };
+}
+
 function attachCamera(stream) {
   S.stream = stream;
   const v = $('preview');
@@ -534,6 +631,18 @@ async function startCamera() {
     attachCamera(s);
     return true;
   } catch (e) {
+    // ★ 不再静默吞掉错误。历史上这里 return false 无任何提示，
+    //   导致"看起来采集成功、实则相机从未工作"的情况无法被发现。
+    const el = $('frameWarn');
+    if (el) {
+      const name = e && e.name ? e.name : 'Error';
+      const hint = name === 'NotAllowedError' ? '权限被拒绝'
+        : name === 'NotReadableError' ? '设备被其他应用占用'
+        : name === 'NotFoundError' ? '未找到摄像头'
+        : (!window.isSecureContext ? '当前非 HTTPS 安全上下文，浏览器禁止访问摄像头' : '未知原因');
+      el.innerHTML = '⚠ 摄像头启动失败：' + hint + '（' + name + '）。将无法采集画面。';
+      el.className = 'gatewarn on';
+    }
     return false;
   }
 }
@@ -549,7 +658,9 @@ function grabFrame() {
   const c = document.createElement('canvas');
   c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
   c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
-  S.ring.push({ t: now() - S.t0, url: c.toDataURL('image/jpeg', 0.6) });
+  const q = frameQuality(v);
+  if (q) noteFrameQuality(q);
+  S.ring.push({ t: now() - S.t0, url: c.toDataURL('image/jpeg', 0.6), q: q });
   while (S.ring.length > CFG.RING_FRAMES) S.ring.shift();
 }
 
@@ -561,10 +672,43 @@ function grabSweep() {
   const c = document.createElement('canvas');
   c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
   c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
+  const q = frameQuality(v);
+  if (q) noteFrameQuality(q);
   S.sweeps.push({
     t: Math.round(now() - S.t0), url: c.toDataURL('image/jpeg', 0.6),
-    lat: S.gps.lat, lon: S.gps.lon, spd: +(speed() * 3.6).toFixed(1)
+    lat: S.gps.lat, lon: S.gps.lon, spd: +(speed() * 3.6).toFixed(1), q: q
   });
+}
+
+/* 累积帧质量统计，并在界面上实时提示。
+ * 关键设计：**当场可见** —— 若镜头被遮挡，采集者立刻就知道，不用等导出分析。 */
+function noteFrameQuality(q) {
+  S.frameQ.n++;
+  if (q.suspect) S.frameQ.suspect++;
+  S.frameQ.last = q;
+  // 每 10 帧刷新一次界面，避免每帧都碰 DOM（60Hz 下会拖慢采样）
+  if (S.frameQ.n % 10 === 0) updateFrameWarn();
+}
+
+function updateFrameWarn() {
+  const el = $('frameWarn');
+  if (!el) return;
+  const { n, suspect, last } = S.frameQ;
+  if (!n) { el.className = 'gatewarn'; return; }
+  const ratio = suspect / n;
+  if (ratio >= 0.5) {
+    el.innerHTML = '⚠ 画面自检：' + suspect + '/' + n + ' 帧疑似无效' +
+      (last && last.reason ? '（' + last.reason + '）' : '') +
+      '　请检查摄像头是否被支架/遮挡物挡住。';
+    el.className = 'gatewarn on';
+  } else if (ratio > 0) {
+    el.innerHTML = '画面自检：' + suspect + '/' + n + ' 帧疑似无效，多数帧正常。';
+    el.className = 'gatewarn on';
+  } else {
+    el.innerHTML = '画面自检：' + n + ' 帧均正常（唯一色数中位 ' +
+      (last ? last.uniq : '-') + '，灰度σ ' + (last ? last.std : '-') + '）。';
+    el.className = 'gatewarn';
+  }
 }
 
 function framesForEvent(peakT) {
@@ -700,8 +844,13 @@ function autoType(peak, durMs, bump, margin) {
   // ★ 旧版最后一行 `return '井盖'` 是兜底分支，把所有「又短又不够尖」的事件
   //   统统归为井盖。实测 145 个事件里 124 个被标成井盖，而 vz 显示 92% 实为凹陷——
   //   井盖是凸起物，两者直接矛盾。现在改为：先用 vz 区分凸起/凹陷，判不准就说「未定」。
-  if (durMs > 620) return '粗糙路面';
-  if (durMs >= 280) return '减速带';
+  // ★ 阈值修正（v0.5）：旧值 `durMs > 620` 是死代码——实测 83 个事件的时长
+  //   最长仅 367ms、P99=250ms，0 个命中，等于「粗糙路面」这个类别根本不可达。
+  //   下调到 250ms（≈P99）后，「长而缓的持续振动」这一形态才真正可达。
+  //   与坑洼的区别是波形形态而非幅度：坑洼=尖峰（幅值高、时长短），
+  //   粗糙路面=低幅持续（时长长、sumSq 相对低）。
+  if (durMs > 250) return '粗糙路面';
+  if (durMs >= 180) return '减速带';
   if (peak > 9) return '坑洼';
   // 余下是「短且不够尖」的一类：不做猜测，交给 vz 的方向信息，仍有歧义就标未定
   if (margin != null && margin > 1.0) {
@@ -710,6 +859,188 @@ function autoType(peak, durMs, bump, margin) {
   }
   return '未定';
 }
+
+/* ============================ 振动路段聚类 ============================
+ * 目的：解决「连续颠簸被报成一连串事件」的表述问题。
+ *
+ * 三个层次（对应数据模型的三个粒度）：
+ *   振动事件 event   —— 单次冲击，原始记录
+ *   振动路段 segment —— 时间上邻近的事件聚成一段 ← 连续颠簸的正确表述
+ *   病害点  defect   —— 由路段 + 视觉共同确认的具体病害（在融合层产出）
+ *
+ * 为什么必须分层：实测某段 70.8 秒内报了 42 个事件，但物理上那是「一条烂路」，
+ * 不是 42 个独立病害。直接上报 42 个点要素，密度达 136 个/km（每 7 米一个病害），
+ * 物理上不成立；聚成路段后 9.9 段/km 才是合理量级。
+ *
+ * 分类规则（v0.5 修正）：
+ *   段内事件数 <  SEG_MIN_EVENTS  -> 孤立病害点（点要素，非面要素）
+ *   跨度 >= 8s 或事件数 >= 5     -> 连续破损路段（面要素）
+ *   其余                          -> 局部密集段
+ *
+ * ★ v0.5 关键修正：「设计接缝」不再作为路段类型。
+ *   设计错误回顾：上一版把「疑似设计接缝段」放在路段层，根因是把「发生频率高」
+ *   误当成「空间上连续」。二者是不同性质：
+ *     点要素 —— 等间距离散点列（水泥缝每 4~5m 一道，缝间是完好的混凝土板），
+ *               判别特征是「缝距周期性」（间隔稳定）
+ *     面要素 —— 连续区域（坑洼/破损），判别特征是「区域内密度高」（间隔无规律）
+ *   把离散点列聚成路段会造成两个后果：
+ *     ① 误报：一条完好的水泥路会被报成「连续破损路段」（缝间隔仅 4~5m，
+ *        远小于 SEG_GAP_MS，必然被并进同一段）
+ *     ② 丢特征：聚成段后只输出「本段 N 个事件」，缝距周期性这一最关键的
+ *        判别依据反而消失了
+ *   因此设计接缝降级为【事件级】分类（见 markJoints()），且不参与路段聚合。
+ */
+function segments() {
+  const ev = S.events;
+  if (!ev.length) return [];
+  const out = [];
+  let cur = [ev[0]];
+  for (let i = 1; i < ev.length; i++) {
+    const gap = ev[i].t - (cur[cur.length - 1].t + cur[cur.length - 1].duration);
+    if (gap <= CFG.SEG_GAP_MS) cur.push(ev[i]);
+    else { out.push(cur); cur = [ev[i]]; }
+  }
+  out.push(cur);
+
+  return out.map((list, i) => {
+    const t0 = list[0].t;
+    const last = list[list.length - 1];
+    const tEnd = last.t + last.duration;
+    const span = (tEnd - t0) / 1000;
+    const peaks = list.map(e => e.peak).sort((a, b) => a - b);
+    const spd = list.reduce((a, e) => a + (e.spd || 0), 0) / list.length;   // km/h
+    // 段长按 平均车速 × 时长 估算（GPS 折线会低估曲线路径，速度积分更可信）
+    const lenM = +(spd / 3.6 * span).toFixed(1);
+    const p90 = peaks[Math.floor((peaks.length - 1) * 0.9)];
+    const nD = list.filter(e => e.bump === '凹陷').length;
+    const nU = list.filter(e => e.bump === '凸起').length;
+
+    // 间隔规律性：变异系数。规则间隔（如水泥缝）CV 很小。
+    const gaps = [];
+    for (let k = 1; k < list.length; k++)
+      gaps.push(list[k].t - (list[k - 1].t + list[k - 1].duration));
+    let reg = null;
+    if (gaps.length >= 2) {
+      const mean = gaps.reduce((a, x) => a + x, 0) / gaps.length;
+      const sd = Math.sqrt(gaps.reduce((a, x) => a + (x - mean) ** 2, 0) / gaps.length);
+      reg = { mean_ms: Math.round(mean), cv: +(mean ? sd / mean : 0).toFixed(2) };
+    }
+    // 缝距：间隔 × 车速，用于对照混凝土路面缩缝设计间距（4~5m）
+    const jointM = reg ? +(reg.mean_ms / 1000 * (spd / 3.6)).toFixed(2) : null;
+
+    let kind, note;
+    if (list.length < CFG.SEG_MIN_EVENTS) {
+      kind = '孤立病害点';
+      note = '单个事件，按点要素上报';
+    } else if (span >= 8 || list.length >= 5) {
+      kind = '连续破损路段';
+      note = '连续颠簸 ' + span.toFixed(1) + ' 秒，应按面状要素（起止点+强度）上报，'
+           + '而非 ' + list.length + ' 个孤立点';
+    } else {
+      kind = '局部密集段';
+      note = '短距离内多个事件';
+    }
+
+    // ★ 段内设计接缝候选数：只作提示，不改变路段性质。
+    //   注意是「候选」不是「确认」——振动信号无法确证接缝，见 markJoints() 说明。
+    const nJoint = list.filter(e => e.is_joint_candidate).length;
+
+    return {
+      id: i,
+      kind: kind, note: note,
+      t_start: Math.round(t0), t_end: Math.round(tEnd),
+      span_s: +span.toFixed(1), length_m: lenM,
+      event_count: list.length,
+      joint_candidate_count: nJoint,
+      peak_max: Math.max(...list.map(e => e.peak)),
+      peak_p90: p90,
+      peak_median: +peaks[Math.floor((peaks.length - 1) / 2)].toFixed(2),
+      speed_kmh: +spd.toFixed(1),
+      lat: list[0].lat, lon: list[0].lon,
+      lat_end: last.lat, lon_end: last.lon,
+      n_sunken: nD, n_bulge: nU,
+      gap_mean_ms: reg ? reg.mean_ms : null,
+      gap_cv: reg ? reg.cv : null,
+      joint_spacing_m: jointM,
+      event_ids: list.map(e => e.id),
+      // 计入健康度：路段是振动证据本身，在视觉确认前不应因「疑似接缝」而豁免
+      counts_toward_rhi: true
+    };
+  });
+}
+
+/* ================== 设计接缝（事件级「候选」标记） ==================
+ * 为什么在事件层：见上方 segments() 注释中的 v0.5 修正说明。
+ *
+ * ★ 重要限制（务必先读）
+ *   本函数产出的是【候选】而非【结论】——is_joint_candidate。
+ *   原因：用实采包标定后发现，纯振动信号无法可靠区分设计接缝与普通坑洼。
+ *
+ *   证据：相邻事件间隔换算的缝距分布为
+ *     最小 3.49 / P25 4.79 / 中位 5.63 / P75 6.53 / 最大 57.34 (m)
+ *     落在 3~6.5m 区间：56/76 = 74%
+ *   看似「大量接缝」，但这是因果倒置：74% 的间隔都落在这个窄带，
+ *   恰恰说明它不是一个有判别力的特征。真实来源是骑行速度下
+ *   （12km/h ≈ 3.33m/s）车轮转动 + 检测器不应期的乘积节拍：
+ *   不应期 1500ms × 3.33m/s ≈ 5.0m，与「设计缝距 4~5m」数值巧合重合。
+ *   实测：多种判据扫描下最高只能挑出 47%，且越严格越接近随机抽样。
+ *
+ *   结论：设计接缝的最终判定必须依赖【视觉】——水泥缝在图像上是
+ *   贯穿路面的直线，与坑洼的局部块状破损形态完全不同，这是振动
+ *   信号给不了的信息。因此本函数只做粗筛，把「间隔规整且缝距合理」
+ *   的事件标为候选，供下游视觉环节优先复核。
+ *
+ * 粗筛判据：局部窗口（前后各 2 个邻居）间隔 CV < 0.25 且换算缝距 3~6.5m。
+ * 换算缝距 = 间隔(ms) / 1000 × 车速(m/s)。
+ * 标记后该事件不计入健康度，但仍保留在事件列表与轨迹中。
+ */
+function markJoints() {
+  const ev = S.events;
+  for (const e of ev) {
+    e.is_joint_candidate = false;
+    e.is_joint = false;          // 保留字段位，恒为 false —— 结论只能由视觉环节给出
+    e.joint_spacing_m = null;
+    e.joint_cv = null;
+  }
+
+  const W = 2;   // 前后各取 2 个邻居
+  for (let i = 0; i < ev.length; i++) {
+    if (i < W || i >= ev.length - W) continue;
+    const win = ev.slice(i - W, i + W + 1);
+    const gaps = [];
+    for (let k = 1; k < win.length; k++) {
+      const g = win[k].t - (win[k - 1].t + win[k - 1].duration);
+      if (g > 0) gaps.push(g);
+    }
+    if (gaps.length < 3) continue;
+    const mean = gaps.reduce((a, x) => a + x, 0) / gaps.length;
+    if (mean <= 0) continue;
+    const sd = Math.sqrt(gaps.reduce((a, x) => a + (x - mean) ** 2, 0) / gaps.length);
+    const cv = sd / mean;
+    const spd = win.reduce((a, x) => a + (x.spd || 0), 0) / win.length;   // km/h
+    const jointM = mean / 1000 * (spd / 3.6);
+
+    if (cv >= 0.25) continue;
+    if (jointM < 3 || jointM > 6.5) continue;
+
+    // 该事件自身与左右邻居的间隔也要贴合窗口均值（差值 < 25%）
+    const gPrev = ev[i].t - (ev[i - 1].t + ev[i - 1].duration);
+    const gNext = ev[i + 1].t - (ev[i].t + ev[i].duration);
+    const near = (g) => g > 0 && Math.abs(g - mean) / mean < 0.25;
+    if (!near(gPrev) || !near(gNext)) continue;
+
+    ev[i].is_joint_candidate = true;
+    ev[i].joint_spacing_m = +jointM.toFixed(2);
+    ev[i].joint_cv = +cv.toFixed(2);
+  }
+}
+
+/* 路段类型配色（与事件配色体系区分开：路段是面要素，用较柔和的色） */
+const SEG_COLOR = {
+  '连续破损路段': '#A32D2D',
+  '局部密集段': '#854F0B',
+  '孤立病害点': '#888780'
+};
 
 function updateGateWarn() {
   const el = $('gateWarn');
@@ -803,18 +1134,28 @@ function renderEvents() {
     const badge = e.manual
       ? '<span class="badge g">已标定</span>'
       : '<span class="badge">自动判定，待确认</span>';
+    const segTxt = e.segment_kind
+      ? '<br>路段 #' + e.segment_id + ' · ' + e.segment_kind
+      : '';
+    // 设计接缝只是候选，不作为结论显示，仅提示需视觉复核
+    const jointTxt = e.is_joint_candidate
+      ? '<br><span style="color:#5C7A99">疑似接缝候选 · 缝距 ' + e.joint_spacing_m
+        + ' m（待视觉复核）</span>'
+      : '';
     return '<div class="ev" data-id="' + e.id + '">'
       + '<div class="ev-top">' + thumb
       + '<div class="info">'
       + '<p class="tt" style="color:' + c + '">' + t + badge + '</p>'
       + '峰值 ' + e.peak + ' m/s²<br>时长 ' + e.duration + 'ms · ' + e.spd + 'km/h · ' + (e.t / 1000).toFixed(0) + 's'
       + '<br>画面 ' + (e.frames ? e.frames.length : 0) + ' 帧'
+      + segTxt + jointTxt
       + '</div></div>'
       + '<div class="labels">'
       + '<button class="lg-p" data-l="坑洼">坑洼</button>'
       + '<button class="lg-b" data-l="减速带">减速带</button>'
       + '<button class="lg-m" data-l="井盖">井盖</button>'
       + '<button class="lg-r" data-l="粗糙路面">粗糙</button>'
+      + '<button class="lg-j" data-l="设计接缝">设计接缝</button>'
       + '<button class="lg-n" data-l="误报">误报</button>'
       + '</div></div>';
   }).join('');
@@ -950,11 +1291,64 @@ function rawCsv() {
   return head + '\n' + csvOf(body);
 }
 
+/* 把路段归属写回事件对象，供 CSV / meta / 界面共用。
+ * 每次导出前调用一次即可（路段是从事件派生的，不单独维护状态）。 */
+function stampSegments() {
+  // 顺序很重要：先做事件级设计接缝标记，路段聚合才能知道段内有多少个是接缝
+  markJoints();
+  const segs = segments();
+  S.events.forEach(e => { e.segment_id = null; e.segment_kind = null; });
+  for (const s of segs) {
+    for (const id of s.event_ids) {
+      const e = S.events[id];
+      if (e) { e.segment_id = s.id; e.segment_kind = s.kind; }
+    }
+  }
+  S.segs = segs;
+  return segs;
+}
+
 function eventCsv() {
-  const head = 'id,t_ms,duration_ms,peak,rms,lat,lon,speed_kmh,auto_label,final_label,frames';
-  const body = S.events.map(e =>
-    [e.id, e.t, e.duration, e.peak, e.rms, e.lat, e.lon, e.spd, e.auto,
-     e.manual || '', e.frames ? e.frames.length : 0].join(','));
+  const segs = stampSegments();
+  const head = 'id,t_ms,duration_ms,peak,rms,lat,lon,speed_kmh,auto_label,'
+             + 'final_label,frames,joint_candidate,joint_spacing_m,'
+             + 'segment_id,segment_kind,segment_event_count,counts_toward_rhi';
+  const byId = {};
+  for (const s of segs) byId[s.id] = s;
+  const body = S.events.map(e => {
+    const s = e.segment_id != null ? byId[e.segment_id] : null;
+    return [e.id, e.t, e.duration, e.peak, e.rms, e.lat, e.lon, e.spd, e.auto,
+            e.manual || '', e.frames ? e.frames.length : 0,
+            e.is_joint_candidate ? 1 : 0,
+            e.joint_spacing_m != null ? e.joint_spacing_m : '',
+            e.segment_id != null ? e.segment_id : '',
+            e.segment_kind || '',
+            s ? s.event_count : '',
+            s ? (s.counts_toward_rhi ? 1 : 0) : ''].join(',');
+  });
+  return head + '\n' + csvOf(body);
+}
+
+/* 路段表：连续颠簸的「面状要素」表述 —— 起止点 + 段长 + 强度。
+ * 这是本项目对「连续颠簸如何上报」的正式答案。
+ * 注意：设计接缝不在本表（它是点要素，走 events.csv 的 is_joint 字段）。 */
+function segmentCsv() {
+  const segs = stampSegments();
+  const head = 'segment_id,kind,t_start_ms,t_end_ms,span_s,length_m,event_count,'
+             + 'joint_candidate_count,'
+             + 'peak_max,peak_p90,peak_median,speed_kmh,n_sunken,n_bulge,'
+             + 'gap_mean_ms,gap_cv,joint_spacing_m,start_lat,start_lon,end_lat,end_lon,'
+             + 'counts_toward_rhi';
+  const body = segs.map(s => [
+    s.id, s.kind, s.t_start, s.t_end, s.span_s, s.length_m, s.event_count,
+    s.joint_candidate_count,
+    s.peak_max, s.peak_p90, s.peak_median, s.speed_kmh, s.n_sunken, s.n_bulge,
+    s.gap_mean_ms != null ? s.gap_mean_ms : '', s.gap_cv != null ? s.gap_cv : '',
+    s.joint_spacing_m != null ? s.joint_spacing_m : '',
+    s.lat != null ? s.lat : '', s.lon != null ? s.lon : '',
+    s.lat_end != null ? s.lat_end : '', s.lon_end != null ? s.lon_end : '',
+    s.counts_toward_rhi ? 1 : 0
+  ].join(','));
   return head + '\n' + csvOf(body);
 }
 
@@ -966,17 +1360,31 @@ function sweepCsv() {
 }
 
 function metaObj() {
+  stampSegments();   // 先写回路段归属，保证 segments 与 events 的 segment_id 一致
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
+  const nJoint = S.events.filter(e => e.is_joint_candidate).length;
   return {
-    version: '0.3', exported_at: new Date().toISOString(),
+    version: '0.5', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
     sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
+    segment_count: segments().length,
+    // 设计接缝是事件级点要素，与路段（面要素）分属不同粒度，故单独计数
+    joint_candidate_count: nJoint,
+    joint_note: '★ 这是【候选】不是【确认】。设计接缝（水泥路面横向缩缝等）不属于道路损坏，'
+      + '它是等间距离散点列（点要素），与坑洼/连续破损（面要素）性质不同，'
+      + '故在事件层标记、不参与路段聚合、不出现在 segments 表中。'
+      + '但实采包标定显示：纯振动信号无法可靠区分接缝与坑洼——'
+      + '相邻间隔换算缝距 74% 落在 3~6.5m 区间，看似特征显著，实为因果倒置：'
+      + '该区间宽度（3.5m）恰好覆盖不应期(1500ms)×车速(3.33m/s)≈5.0m 的节拍，'
+      + '即检测器自身节奏的产物，故无判别力（多判据扫描最高仅能挑出 47%）。'
+      + '最终判定必须依赖视觉：水泥缝在图像上是贯穿路面的直线，'
+      + '与坑洼的局部块状破损形态完全不同。',
     duration_s: +dur.toFixed(1),
     sample_rate_hz: dur > 0 ? +(S.samples.length / dur).toFixed(1) : null,
     camera_enabled: !!S.stream || !!S.events.some(e => e.frames && e.frames.length) || S.sweeps.length > 0,
     frame_size: [CFG.FRAME_W, CFG.FRAME_H],
-    labels_available: ['坑洼', '减速带', '井盖', '粗糙路面', '误报'],
+    labels_available: ['坑洼', '减速带', '井盖', '粗糙路面', '设计接缝', '误报'],
     labelled_events: S.events.filter(e => e.manual).length,
     collection: {
       collected_by: S.collector || null,
@@ -1008,6 +1416,29 @@ function metaObj() {
     },
     why_sweep_frames: '裂缝等病害不引起垂直颠簸，不会触发事件抓帧。' +
       '若只保留事件帧，视觉将永远无法贡献裂缝类病害，因此必须周期性扫描抓帧。',
+    // 帧有效性自检：镜头遮挡时画面为平坦纯色块，特征与路面差异极大。
+    // 此项为采集端当场判定，下游可直接据此过滤/加权，不必重新读图。
+    frame_quality: {
+      checked: S.frameQ.n,
+      suspect: S.frameQ.suspect,
+      suspect_ratio: S.frameQ.n ? +(S.frameQ.suspect / S.frameQ.n).toFixed(3) : null,
+      usable: S.frameQ.n ? (S.frameQ.suspect / S.frameQ.n < 0.5) : null,
+      note: S.frameQ.n === 0
+        ? '本包未抓取任何帧图（摄像头未启用或全程被门控拦下）'
+        : (S.frameQ.suspect / S.frameQ.n >= 0.5
+            ? '⚠ 过半数帧疑似无效，视觉数据不宜用于任何评测'
+            : '帧图总体正常，可用于视觉分析'),
+      criteria: {
+        downscale: '60x45 后计算，单帧成本约 0.1ms，不影响 60Hz 采样',
+        gray_std: '灰度标准差。正常路面实测 13.9~23.3；遮挡物 0.0~9.8',
+        cast: '通道均值间最大差值（偏色幅度）。正常路面 0.8~5.0；单色遮挡物 45~164',
+        suspect_rule: 'std < 9.0 且 uniq < 400（画面平坦）或 cast > 40（严重偏色）',
+        calibration: '在 940 张真实废帧 + 40 张合成正常路面 + 12 种遮挡物颜色上标定：' +
+          '废帧召回 100%，遮挡物覆盖 92%，正常路面误杀 0%',
+        known_limit: '带渐变的灰色遮挡物（std≈9.8, cast≈0）为已知边界漏检，概率低'
+      },
+      last_frame_sample: S.frameQ.last
+    },
     method: {
       gravity_tau_s: CFG.TAU_GRAVITY, smooth_tau_s: CFG.TAU_SMOOTH,
       noise_floor: 'quantile(|x|, ' + (CFG.NOISE_Q * 100) + '%) over ' + CFG.NOISE_WIN_S + 's centered window',
@@ -1016,15 +1447,48 @@ function metaObj() {
       vertical_component: '线性加速度在重力方向上的投影，保留正负号',
       note: '浏览器 devicemotion 通常约 60Hz；请按实际时间戳重采样至 100Hz 后分析'
     },
+    // ★ 振动路段：把连续颠簸按时间邻近聚成段，解决「一连串孤立事件」的表述问题。
+    //   连续颠簸应按**面状要素**（起止点 + 段长 + 强度）上报，而非 N 个点要素。
+    segmentation_criteria: {
+      gap_ms: CFG.SEG_GAP_MS,
+      gap_rule: '相邻事件间隔 <= ' + CFG.SEG_GAP_MS + 'ms 视为同一段（间隔按「前一事件结束 -> 后一事件开始」计）',
+      gap_calibration: '真实包 83 个事件的间隔呈双峰：71/82 落在 1.5~2.0s（近规则节奏），' +
+        '其后骤降；取值 3s 位于同段节奏与跨段间隔之间，得 6 段 / 9.9 段/km',
+      min_events_for_segment: CFG.SEG_MIN_EVENTS,
+      segment_length: '按 平均车速 × 时长 估算（速度积分比 GPS 折线更可信，折线会低估曲线路径）',
+      kind_rules: {
+        '孤立病害点': '段内事件数 < ' + CFG.SEG_MIN_EVENTS + '，按点要素上报',
+        '连续破损路段': '时长 >= 8s 或事件数 >= 5，按面状要素上报',
+        '局部密集段': '其余短距离多事件情况'
+      },
+      why_no_joint_segment: '★ v0.5 修正：设计接缝曾作为路段类型「疑似设计接缝段」，已移除。' +
+        '根因是把「发生频率高」误当成「空间上连续」——水泥缝是每 4~5m 一道的等间距离散点列（点要素），' +
+        '缝与缝之间是完好的混凝土板，不是连续破损区域（面要素）。聚成路段会造成：' +
+        '① 完好水泥路被误报为连续破损路段（缝间隔远小于聚类间隙，必然并入同段）；' +
+        '② 丢失缝距周期性这一本应可用的判别特征。故改为事件级候选标记。' +
+        '但后续标定进一步发现该特征本身也立不住（见 meta.joint_note），' +
+        '接缝的最终判定留给视觉环节。',
+      why_layered: '实测某段 70.8s 内报了 42 个事件，密度 136 个/km（每 7 米一个病害），物理上不成立；' +
+        '聚成路段后 9.9 段/km 才是合理量级'
+    },
+    segments: segments(),
     events: S.events.map(e => ({
       id: e.id, t_ms: e.t, duration_ms: e.duration, peak: e.peak, rms: e.rms,
       lat: e.lat, lon: e.lon, speed_kmh: e.spd,
       auto_label: e.auto, final_label: e.manual || e.auto, manual: !!e.manual,
-      frames: (e.frames || []).map(f => ({ t_ms: Math.round(f.t), file: 'frames/ev' + e.id + '_t' + Math.round(f.t) + '.jpg' }))
+      segment_id: e.segment_id != null ? e.segment_id : null,
+      segment_kind: e.segment_kind || null,
+      frames: (e.frames || []).map(f => ({
+        t_ms: Math.round(f.t), file: 'frames/ev' + e.id + '_t' + Math.round(f.t) + '.jpg',
+        suspect: f.q ? !!f.q.suspect : null,
+        uniq: f.q ? f.q.uniq : null
+      }))
     })),
     sweeps: S.sweeps.map(s => ({
       t_ms: s.t, lat: s.lat, lon: s.lon, speed_kmh: s.spd,
-      file: 'frames/sweep_t' + s.t + '.jpg'
+      file: 'frames/sweep_t' + s.t + '.jpg',
+      suspect: s.q ? !!s.q.suspect : null,
+      uniq: s.q ? s.q.uniq : null
     }))
   };
 }
@@ -1093,6 +1557,7 @@ function exportZip() {
   const files = [
     { name: 'samples.csv', data: enc.encode(rawCsv()) },
     { name: 'events.csv', data: enc.encode(eventCsv()) },
+    { name: 'segments.csv', data: enc.encode(segmentCsv()) },
     { name: 'sweeps.csv', data: enc.encode(sweepCsv()) },
     { name: 'meta.json', data: enc.encode(JSON.stringify(metaObj(), null, 2)) }
   ];
@@ -1135,9 +1600,11 @@ $('btnBack').onclick = () => $('labelCard').scrollIntoView({ behavior: 'smooth' 
 $('btnReset').onclick = () => {
   S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
   S.gateBlocked = 0; S.blockEp = false; S.spdMax = 0; S.spdUsable = false;
+  S.frameQ = { n: 0, suspect: 0, last: null };
   $('exportCard').classList.add('hidden');
   $('labelCard').classList.add('hidden');
   $('gateWarn').className = 'gatewarn';
+  $('frameWarn').className = 'gatewarn';
   renderEvents(); paint();
   $('mSpeed').innerHTML = '0<small>km/h</small>';
   $('mTime').innerHTML = '0<small>s</small>';
