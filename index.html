@@ -224,7 +224,19 @@ const $ = id => document.getElementById(id);
 const CFG = {
   TAU_GRAVITY: 0.5, TAU_SMOOTH: 0.010,
   NOISE_WIN_S: 3.0, NOISE_Q: 0.20, NOISE_K: 4.0, MIN_THRESHOLD: 1.2,
-  RELEASE_RATIO: 0.5, REFRACTORY_MS: 600, MAX_EVENT_MS: 3000,
+  RELEASE_RATIO: 0.5,
+  // ★ 不应期：控制「多久才算一次新事件」，是抑制连续颠簸碎片化的主参数。
+  //   实测 145 个事件实际只对应 7 段真实路面变化，其中一段 74 个事件挤在 70.8s 内
+  //   （平均间隔 969ms），而旧值 600ms 恰好卡在真实颠簸间隔之下，完全失去抑制作用。
+  //   连续颠簸路段每帧都超门限，抬高门限收效甚微（实测只减 14%），真正管用的是不应期。
+  //
+  //   取值取舍（实采包 12km/h ≈ 3.33m/s，不应期直接等于里程盲区）：
+  //     600ms → 167 事件 / 6 簇 / 最大簇 82 个   （碎片化严重，不可用）
+  //    1500ms →  83 事件 / 11 簇 / 最大簇 26 个  （★ 选用：压住碎片化，仍保留路段内多事件）
+  //    3000ms →  46 事件 / 46 簇 / 最大簇  1 个  （矫枉过正：每段只剩 1 个点，路段形态丢失）
+  //   3000ms 意味着 10 米内只报一次，会把同一条烂路上相隔 5~8 米的两个坑合并成一个，
+  //   属于「为了少报而丢真相」。1500ms 对应 5 米盲区，与坑洼的空间尺度相称。
+  REFRACTORY_MS: 1500, MAX_EVENT_MS: 3000,
   MIN_SPEED_MS: 8 / 3.6,
   FRAME_MS: 100, RING_FRAMES: 24,
   KEEP_BEFORE_MS: 1200, KEEP_AFTER_MS: 400, MAX_FRAMES_PER_EVENT: 6,
@@ -238,6 +250,9 @@ const S = {
   recording: false, samples: [], events: [],
   g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0,
   inEvent: false, cur: null, lastEnd: 0, lastT: 0,
+  // 当前帧的带符号垂直分量（重力方向投影）。正值=凸起，负值=凹陷。
+  // 由信号处理段逐帧写入，detect() 在事件窗口内累积其上下极值以判定凸起/凹陷。
+  lastVz: 0,
   gps: { lat: null, lon: null, spd: null, acc: null }, prevFix: null,
   win: [], motionCount: 0, t0: 0, thr: CFG.MIN_THRESHOLD,
   wakeLock: null, gpsWatch: null,
@@ -598,6 +613,10 @@ function onMotion(ev) {
   // 重力方向投影：带符号的垂直分量
   const gn = Math.sqrt(S.g.x ** 2 + S.g.y ** 2 + S.g.z ** 2) || 1e-6;
   const vz = (lx * S.g.x + ly * S.g.y + lz * S.g.z) / gn;
+  // ★ 供 detect() 累积事件窗口内的 vz 极值，用于判定「凸起 / 凹陷」。
+  //   正值 = 向上凸起（减速带、井盖）；负值 = 向下凹陷（坑洼）。
+  //   这是融合规则 R5「IMU 有冲击但表面完好 → 结构性凸起」所需的输入。
+  S.lastVz = vz;
 
   const gyr = ev.rotationRate || {};
   const spd = speed();
@@ -614,10 +633,13 @@ function onMotion(ev) {
 }
 
 function detect(t, v, spd) {
-  S.win.push({ t, v });
+  // ★ v = smooth，是「带符号」的交流分量（有正有负）。
+  //   幅值判定一律用 a = |v|；符号另有用途（见 vz 的凸起/凹陷判定）。
+  const a = Math.abs(v);
+  S.win.push({ t, v: a });
   while (S.win.length && t - S.win[0].t > CFG.NOISE_WIN_S * 1000) S.win.shift();
 
-  const abs = S.win.map(w => Math.abs(w.v)).sort((a, b) => a - b);
+  const abs = S.win.map(w => w.v).sort((x, y) => x - y);
   const q = abs.length ? abs[Math.floor((abs.length - 1) * CFG.NOISE_Q)] : 0.02;
   const floor = Math.max(q, 0.02);
   const thr = Math.max(CFG.MIN_THRESHOLD, CFG.NOISE_K * floor);
@@ -626,7 +648,7 @@ function detect(t, v, spd) {
   const moving = (S.mode === 'test') || (spd >= CFG.MIN_SPEED_MS);
 
   if (!S.inEvent) {
-    if (v > thr) {
+    if (a > thr) {
       if (!moving) {
         // 超了门限却没通过速度门控：记一笔，并在界面上明确提示。
         // 上一版就是在这里静默丢弃，导致"信号明明很强却一个事件都没有"。
@@ -635,7 +657,10 @@ function detect(t, v, spd) {
         S.blockEp = false;
         if ((t - S.lastEnd) > CFG.REFRACTORY_MS) {
           S.inEvent = true;
-          S.cur = { t0: t, peak: 0, sumSq: 0, n: 0, sig: [] };
+          // ★ 必须把「触发帧」自身的幅值计入峰值，并用 sumSq/n 同时起算。
+          //   旧代码 peak 初值为 0 且漏掉触发帧，而真实冲击是「一个正尖峰后立刻转负」，
+          //   导致 peak 永远停在 0 附近——实测 145 个事件中 27 个（18.6%）peak 低于门限。
+          S.cur = { t0: t, peak: a, sumSq: v * v, n: 1, sig: [v], vzMin: 0, vzMax: 0 };
         }
       }
     } else {
@@ -643,17 +668,25 @@ function detect(t, v, spd) {
     }
   } else {
     const c = S.cur;
-    if (v > c.peak) c.peak = v;
+    // ★ 幅值用 |v|（不再是带符号值），否则负半周永远无法刷新峰值
+    if (a > c.peak) c.peak = a;
     c.sumSq += v * v; c.n++;
     if (c.sig.length < 200) c.sig.push(+v.toFixed(3));
-    if ((v < thr * CFG.RELEASE_RATIO && t - c.t0 > 60) || (t - c.t0) > CFG.MAX_EVENT_MS) {
+    // 累积窗口内的带符号垂直分量极值，用于判定「凸起 / 凹陷」
+    if (S.lastVz < c.vzMin) c.vzMin = S.lastVz;
+    if (S.lastVz > c.vzMax) c.vzMax = S.lastVz;
+    if ((a < thr * CFG.RELEASE_RATIO && t - c.t0 > 60) || (t - c.t0) > CFG.MAX_EVENT_MS) {
       const dur = t - c.t0;
+      // 凸起/凹陷：比较 vz 上下极值谁的绝对值更大
+      const bump = Math.abs(c.vzMax) > Math.abs(c.vzMin) ? '凸起' : '凹陷';
+      const bumpMargin = Math.abs(Math.abs(c.vzMax) - Math.abs(c.vzMin));
       const e = {
         id: S.events.length,
         t: Math.round(c.t0 - S.t0), duration: Math.round(dur),
         peak: +c.peak.toFixed(2), rms: +Math.sqrt(c.sumSq / Math.max(c.n, 1)).toFixed(2),
         lat: S.gps.lat, lon: S.gps.lon, spd: +(spd * 3.6).toFixed(1),
-        auto: autoType(c.peak, dur), manual: null,
+        auto: autoType(c.peak, dur, bump, bumpMargin), bump: bump,
+        manual: null,
         frames: framesForEvent(c.t0 - S.t0)
       };
       S.events.push(e);
@@ -663,11 +696,19 @@ function detect(t, v, spd) {
   }
 }
 
-function autoType(peak, durMs) {
+function autoType(peak, durMs, bump, margin) {
+  // ★ 旧版最后一行 `return '井盖'` 是兜底分支，把所有「又短又不够尖」的事件
+  //   统统归为井盖。实测 145 个事件里 124 个被标成井盖，而 vz 显示 92% 实为凹陷——
+  //   井盖是凸起物，两者直接矛盾。现在改为：先用 vz 区分凸起/凹陷，判不准就说「未定」。
   if (durMs > 620) return '粗糙路面';
   if (durMs >= 280) return '减速带';
   if (peak > 9) return '坑洼';
-  return '井盖';
+  // 余下是「短且不够尖」的一类：不做猜测，交给 vz 的方向信息，仍有歧义就标未定
+  if (margin != null && margin > 1.0) {
+    if (bump === '凸起') return '井盖/减速带';   // 结构性凸起
+    return '疑似浅坑';                            // 凹陷但幅度不大
+  }
+  return '未定';
 }
 
 function updateGateWarn() {
