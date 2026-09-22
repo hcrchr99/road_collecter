@@ -15,7 +15,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.svg">
-<title>路面体检 · 采集端 v0.5</title>
+<title>路面体检 · 采集端 v0.6</title>
 <style>
   :root{
     --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
@@ -24,8 +24,29 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{margin:0;padding:16px 14px 48px;background:var(--bg);color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.6;}
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.6;
+    overscroll-behavior:none;-webkit-touch-callout:none;
+    -webkit-user-select:none;user-select:none;}
+  input{-webkit-user-select:text;user-select:text;}
+  button,.modes label{touch-action:manipulation;}
   .wrap{max-width:540px;margin:0 auto;}
+
+  /* ★ iOS 关键修复：手指按住屏幕时，主线程 RunLoop 会切到 UITrackingRunLoopMode，
+     而 WebKit 的 devicemotion 事件源只注册在 default mode —— 于是 IMU 直接停摆
+     （Apple WWDC "Run Loop" 一节明确描述了该模式切换：只注册在 default mode 的事件源
+      在 tracking 期间不会被监听）。本机实测：手指按住屏幕，采样立刻中断。
+     对策：采集中让页面彻底「不可滚动」，iOS 就不会进入 tracking 模式。
+     副作用是好的——采集时界面只剩实时面板，不会被误滑走。 */
+  html.recording{overflow:hidden;height:100%;touch-action:none;}
+  html.recording body{overflow:hidden;height:100%;touch-action:none;}
+  html.recording .card:not(#liveCard){display:none;}
+  html.recording .wrap{padding-bottom:12px;}
+
+  #recBar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:30;
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    background:var(--bg);border-top:1px solid var(--line);}
+  #recBar.on{display:block;}
+  #recBar button{max-width:540px;margin:0 auto;display:block;}
   h1{font-size:17px;font-weight:600;margin:0 0 2px;}
   .sub{font-size:12.5px;color:var(--faint);margin:0 0 16px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;}
@@ -105,12 +126,20 @@
     color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;
     transition:opacity .15s;z-index:99;}
   .flash.on{opacity:1;}
+  /* 分步指引（定位失败时给出 iOS 双层授权的具体操作路径，而不是一句话） */
+  .guide{background:var(--red-bg);border:1px solid #F0C9C9;border-radius:10px;
+    padding:11px 14px;margin:8px 0 0;font-size:12.5px;color:var(--red);line-height:1.65;}
+  .guide .gt{font-weight:600;color:var(--text);display:block;margin-bottom:2px;}
+  .guide ol{margin:6px 0 0;padding-left:18px;}
+  .guide li{margin-bottom:5px;}
+  .guide b{color:var(--text);}
+  .guide code{background:#FFF;border:1px solid #F0C9C9;border-radius:4px;padding:0 4px;font-size:12px;}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.5</span></h1>
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.6</span></h1>
   <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
 
   <div class="err" id="err"></div>
@@ -122,7 +151,7 @@
 
   <div class="card">
     <h2><span class="step" id="s2">2</span>授权并试采</h2>
-    <p class="sub" style="margin:0 0 10px;">必须在同一个点击里发起定位与传感器授权，否则浏览器不会弹窗。试采 4 秒，确认传感器真的有数据再出发。</p>
+    <p class="sub" style="margin:0 0 10px;">需要用户手势的原生权限弹窗，<b>一次点击只能出一个</b>。所以分两步：先授权定位与摄像头，再单独授权运动传感器。每步试采 4 秒，确认传感器真的有数据再出发。</p>
     <button class="primary" id="btnAuth">授权并试采 4 秒</button>
     <div id="trialResult" style="margin-top:10px;"></div>
     <div id="trialCamWrap" class="hidden" style="margin-top:10px;">
@@ -192,6 +221,7 @@
     <p class="sub" style="margin:6px 0 0;font-size:11.5px;" id="waveLegend">纵向动态加速度（去重力 + 去直流），虚线为稳健噪声底门限，顶端红为检出事件</p>
     <div class="gatewarn" id="gateWarn"></div>
     <div class="gatewarn" id="frameWarn"></div>
+    <div class="gatewarn" id="dropWarn"></div>
   </div>
 
   <div class="card hidden" id="labelCard">
@@ -218,6 +248,7 @@
   </div>
 
 </div>
+<div id="recBar"><button class="stop" id="btnStopRec">结束采集</button></div>
 <div class="flash" id="flash"></div>
 
 <script>
@@ -289,7 +320,11 @@ const S = {
   blockEp: false,      // 是否正处于"超门限但被门控拦下"的连续段
   spdMax: 0, spdUsable: false,
   // 帧有效性自检的累积统计（镜头遮挡是真实发生过的故障，须当场可见）
-  frameQ: { n: 0, suspect: 0, last: null }
+  frameQ: { n: 0, suspect: 0, last: null },
+  // ★ 掉样监控：iOS 上手指按住屏幕会让 devicemotion 停止投递（见 CSS 里 recording 的说明）。
+  //   记下采样间隔的异常值，界面当场可见，导出时也随包落盘 —— 用来判断某趟数据是否受影响。
+  drops: { n: 0, max: 0, total: 0 },
+  uiDue: false, uiTimer: null, evDirty: false
 };
 
 function now() { return performance.now(); }
@@ -396,7 +431,15 @@ async function probe() {
     for (const name of ['geolocation', 'camera']) {
       try {
         const st = await navigator.permissions.query({ name });
-        const v = { granted: '已允许', denied: '已被拒绝（浏览器不会再弹窗）', prompt: '尚未决定' }[st.state] || st.state;
+        let v = { granted: '已允许', denied: '已被拒绝（浏览器不会再弹窗）', prompt: '尚未决定' }[st.state] || st.state;
+        // ★ iOS 上这个值会骗人：实测（用户上报）站点层显示已允许、这里也报 granted，
+        //   但 getCurrentPosition 仍返回 code 1 —— 因为系统「定位服务」那一层没开。
+        //   Apple 开发者论坛有相同的报告。所以必须就地标注，不能让人以为已经没问题。
+        if (name === 'geolocation' && isIOS() && st.state === 'granted') {
+          v += '　⚠ iOS 上此值不代表真能用：系统那层没开时仍显示已允许，实际调用会返回 code 1。'
+             + '请一并确认 设置 → 隐私与安全性 → 定位服务（总开关）'
+             + '→ Safari 网站 → 使用 App 期间 + 精确位置';
+        }
         add(name === 'geolocation' ? '定位权限状态' : '摄像头权限状态',
           st.state !== 'denied', v, st.state === 'granted' ? 'ok' : (st.state === 'denied' ? 'no' : 'warn'));
       } catch (e) {
@@ -415,11 +458,111 @@ async function probe() {
 }
 
 /* ============================ 2. 授权 ============================ */
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/* ★ iOS 的定位是「双层授权」，只开浏览器那一层不够。
+ *
+ * 实测现象（用户上报）：Safari 的站点设置里位置已显示「允许」，
+ * navigator.permissions.query({name:'geolocation'}).state 也返回 granted，
+ * 但 getCurrentPosition 仍然回调 error.code === 1（PERMISSION_DENIED）。
+ * Apple 开发者论坛有相同报告：Safari 的 permissions 状态与真实可授权状态不一致，
+ * 系统层的定位服务没开时，站点层显示允许也照样返回 code 1。
+ *
+ * 两层都在系统「设置」里，缺一不可：
+ *   ① 设置 → 隐私与安全性 → 定位服务（总开关）
+ *   ② 同上页面 → Safari 网站 → 使用 App 期间 + 精确位置
+ * （若总开关关闭，② 这一项可能根本不出现，所以必须先确认 ①）
+ */
+function geoGuide() {
+  return '<div class="guide"><span class="gt">定位被拒（code 1）—— iOS 需要开两层授权，只开浏览器那层没用</span>'
+    + '本页的站点设置即使显示「允许」，只要系统那一层没开，iOS 就直接返回 code 1，'
+    + '而页面里的权限查询仍会显示「已允许」——这就是你现在看到的情况。请逐项检查：'
+    + '<ol>'
+    + '<li>设置 → 隐私与安全性 → <b>定位服务</b>（最上面的总开关）→ 打开</li>'
+    + '<li>同一页往下滑，找到 <b>Safari 网站</b> → 选「使用 App 期间」→ 打开「<b>精确位置</b>」</li>'
+    + '<li>回到 Safari，点地址栏左侧的「<b>ᴀA</b>」→ 网站设置 → 位置 → 允许</li>'
+    + '<li>改完设置后<b>刷新本页</b>，再点一次授权</li>'
+    + '</ol>'
+    + '若第 2 项在列表里找不到，说明第 1 项的总开关还没打开。</div>';
+}
+
 function geoMsg(code, raw) {
-  if (code === 1) return '权限被拒绝。若之前点过「拒绝」，浏览器<b>不会再弹窗</b>——请点地址栏左侧的站点设置（锁形图标）把「位置」改为允许，然后刷新本页。另外确认本页是 HTTPS 打开的。';
+  if (code === 1) {
+    return isIOS()
+      ? '权限被拒绝。<b>iOS 的定位是两层授权，只开浏览器那层不够</b>——详见下方分步指引。'
+      : '权限被拒绝。若之前点过「拒绝」，浏览器<b>不会再弹窗</b>——请点地址栏左侧的站点设置'
+        + '（锁形图标）把「位置」改为允许，然后刷新本页；同时确认系统的定位服务总开关是打开的。';
+  }
   if (code === 2) return '位置不可用。系统定位服务可能被关闭，或当前在室内/地下无卫星信号。请开启系统定位并到室外重试。';
-  if (code === 3) return '定位超时。请到室外、关闭省电模式后重试。';
+  if (code === 3) return '定位超时。首次冷启动或室内需要更久，请到室外、关闭省电模式后重试。';
   return '错误码 ' + code + (raw ? '：' + raw : '');
+}
+
+/* 授权状态。iOS 上「需要用户手势的原生弹窗」一次点击只能出一个，
+ * 所以流程拆成两次手势：
+ *   手势 1 —— 定位 + 摄像头（摄像头通常已授权，不会弹窗，因此与定位同批发起无冲突）
+ *   手势 2 —— 运动传感器（它自己的原生弹窗独占这次点击）
+ * 上一版把两个原生弹窗塞进同一次点击：定位请求还在飞，运动权限的原生对话框就弹了出来，
+ * 结果定位被中途取消、直接报 code 1 —— 而摄像头因为不需要弹窗反而成功了，
+ * 这个「摄像头成功、定位失败」的组合正是该 bug 的指纹。 */
+function needMotionPermission() {
+  return typeof DeviceMotionEvent !== 'undefined' &&
+         typeof DeviceMotionEvent.requestPermission === 'function';
+}
+const permAuth = { geo: null, cam: null };
+let motionState = null;   // null = 未尝试；'granted' | 'denied' | 'n/a'
+let phase1Done = false;
+
+function renderPermLines() {
+  const lines = [];
+
+  const g = permAuth.geo;
+  if (g) {
+    if (g.api === false) {
+      lines.push('<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">此浏览器不支持定位</span></div>');
+    } else if (!g.ok) {
+      lines.push('<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">'
+        + geoMsg(g.code, g.raw) + '</span></div>');
+      if (g.code === 1) lines.push(geoGuide());
+    } else {
+      const c = g.pos.coords;
+      const acc = c.accuracy ? c.accuracy.toFixed(0) + ' m' : '未知';
+      lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">定位</span><span class="vl ok">已获取，精度 '
+        + acc + '　速度：' + (c.speed == null || isNaN(c.speed) ? '由两次定位自行推算' : (c.speed * 3.6).toFixed(1) + ' km/h')
+        + '</span></div>');
+    }
+  }
+
+  const c2 = permAuth.cam;
+  if (c2) {
+    if (c2.ok) {
+      lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">摄像头</span><span class="vl ok">已启用，请核对下方取景</span></div>');
+    } else {
+      lines.push('<div class="chk"><span class="mk warn">!</span><span class="lb">摄像头</span><span class="vl warn">'
+        + (c2.err && c2.err.name ? c2.err.name + '：' : '')
+        + '未启用。将退化为纯 IMU 采集（无视觉自动标注）。可检查地址栏的摄像头权限后重新授权。</span></div>');
+    }
+  }
+
+  if (needMotionPermission()) {
+    if (motionState === 'granted') {
+      lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">运动传感器</span><span class="vl ok">已授权</span></div>');
+    } else if (motionState === 'denied') {
+      lines.push('<div class="chk"><span class="mk no">✕</span><span class="lb">运动传感器</span><span class="vl no">'
+        + '未授权。请在 设置 → Safari → 运动与方向访问 中允许，然后刷新本页重试。</span></div>');
+    } else {
+      lines.push('<div class="chk"><span class="mk warn">…</span><span class="lb">运动传感器</span><span class="vl warn">'
+        + '待授权 —— 请点下方按钮，它需要单独一次点击（原生弹窗一次只能出一个）</span></div>');
+    }
+  } else {
+    lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">运动传感器</span><span class="vl ok">'
+      + '本平台无独立授权弹窗，由浏览器/系统设置控制（本页有 8 秒看门狗检测无数据的情况）</span></div>');
+  }
+
+  return lines;
 }
 
 let trialSampleCount = 0;
@@ -434,12 +577,38 @@ function trialHandler(ev) {
 
 async function authorize() {
   clearErr();
-  $('btnAuth').disabled = true;
-  $('trialResult').innerHTML = '<p class="sub" style="margin:0;">正在请求授权…若浏览器弹出提示，请选择「允许」。</p>';
+  const btn = $('btnAuth');
 
-  // 关键：定位与摄像头都必须在点击手势内**同步发起**，
-  // 一旦 await 过任何异步操作，手势即失效，iOS 会静默拒绝。
-  // 上一版把摄像头放在 await 之后，结果 camera_enabled=false、一张画面都没有。
+  /* ── 手势 2：运动传感器（仅 iOS 需要）─────────────────────────
+   * 它必须独占一次点击。上一版把定位请求和运动权限的原生对话框放在同一次点击里：
+   * 定位请求还在飞行中，运动权限的对话框就弹了出来，定位被中途取消直接报 code 1，
+   * 而摄像头因为不需要弹窗反而成功了 —— 「摄像头成功、定位失败」正是该 bug 的指纹。 */
+  if (phase1Done && needMotionPermission() && motionState !== 'granted') {
+    btn.disabled = true;
+    $('trialResult').innerHTML = '<p class="sub" style="margin:0;">正在请求运动传感器授权…请在弹窗中选「允许」。</p>';
+    let ok = false, note = '';
+    try {
+      const r = await DeviceMotionEvent.requestPermission();
+      ok = r === 'granted'; note = r;
+    } catch (e) { note = (e && e.message) || 'error'; }
+    motionState = ok ? 'granted' : 'denied';
+    if (!ok) {
+      $('trialResult').innerHTML = renderPermLines().join('');
+      showErr('运动传感器授权失败',
+        '请在 设置 → Safari → 运动与方向访问 中允许，然后刷新本页重试。' + (note ? '（' + note + '）' : ''));
+      btn.disabled = false;
+      return;
+    }
+    runTrial();
+    return;
+  }
+
+  /* ── 手势 1：定位 + 摄像头 ─────────────────────────────────────
+   * 两者都必须在点击手势内**同步发起**，一旦 await 过任何异步操作手势即失效，
+   * iOS 会静默拒绝。注意本次手势里**不碰**运动传感器权限。 */
+  btn.disabled = true;
+  $('trialResult').innerHTML = '<p class="sub" style="margin:0;">正在请求定位与摄像头授权…若浏览器弹出提示，请选择「允许」。</p>';
+
   const geoAsk = new Promise(resolve => {
     if (!navigator.geolocation) return resolve({ ok: false, api: false });
     navigator.geolocation.getCurrentPosition(
@@ -456,54 +625,47 @@ async function authorize() {
       }).then(s => ({ ok: true, stream: s })).catch(e => ({ ok: false, err: e }))
     : Promise.resolve({ ok: false, err: new Error('此浏览器不支持摄像头 API') });
 
-  let motion = { ok: true, note: 'Android/桌面模式，由浏览器设置控制' };
-  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-    try {
-      const r = await DeviceMotionEvent.requestPermission();
-      motion = { ok: r === 'granted', note: r };
-    } catch (e) {
-      motion = { ok: false, note: e.message };
-    }
-  }
-
-  S.trial = { gaps: [] };
-  trialSampleCount = 0; trialLastT = 0;
-  window.addEventListener('devicemotion', trialHandler);
-
   const [geo, cam] = await Promise.all([geoAsk, camAsk]);
-  const lines = [];
+  permAuth.geo = geo; permAuth.cam = cam;
+  phase1Done = true;
 
-  if (!geo.ok) {
-    lines.push(geo.api === false
-      ? '<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">此浏览器不支持定位</span></div>'
-      : '<div class="chk"><span class="mk no">✕</span><span class="lb">定位</span><span class="vl no">' + geoMsg(geo.code, geo.raw) + '</span></div>');
-  } else {
+  if (geo.ok) {
     const c = geo.pos.coords;
     S.gps = { lat: c.latitude, lon: c.longitude, spd: c.speed, acc: c.accuracy };
-    lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">定位</span><span class="vl ok">已获取，精度 ' +
-      (c.accuracy ? c.accuracy.toFixed(0) + ' m' : '未知') + '</span></div>');
   }
-
   if (cam.ok) {
     if (S.stream) S.stream.getTracks().forEach(t => t.stop());
     S.stream = cam.stream;
     $('preview').srcObject = cam.stream;
     $('previewTrial').srcObject = cam.stream;
     $('trialCamWrap').classList.remove('hidden');
-    lines.push('<div class="chk"><span class="mk ok">✓</span><span class="lb">摄像头</span><span class="vl ok">已启用，请核对下方取景</span></div>');
-  } else {
-    lines.push('<div class="chk"><span class="mk warn">!</span><span class="lb">摄像头</span><span class="vl warn">' +
-      (cam.err && cam.err.name ? cam.err.name + '：' : '') +
-      '未启用。将退化为纯 IMU 采集（无视觉自动标注）。可检查地址栏的摄像头权限后重新授权。</span></div>');
   }
 
-  lines.push('<div class="chk"><span class="mk ' + (motion.ok ? 'ok' : 'no') + '">' + (motion.ok ? '✓' : '✕') +
-    '</span><span class="lb">运动传感器</span><span class="vl ' + (motion.ok ? 'ok' : 'no') + '">' +
-    (motion.ok ? motion.note
-      : '未授权（' + motion.note + '）。iOS 需在 设置 → Safari → 运动与方向访问 中开启。') +
-    '</span></div>');
+  // iOS 还需要运动传感器授权 —— 它要另一次点击，先把阶段一的结论显示出来
+  if (needMotionPermission() && motionState !== 'granted') {
+    $('trialResult').innerHTML = renderPermLines().join('');
+    btn.disabled = false;
+    btn.textContent = '下一步：授权运动传感器并试采';
+    return;
+  }
 
-  lines.push('<div class="chk"><span class="mk warn">…</span><span class="lb">试采中</span><span class="vl warn">请静置或轻微晃动手机，4 秒…</span></div>');
+  runTrial();
+}
+
+/* 试采 4 秒并报出实测采样率。没通过就不放行「开始采集」——
+ * 避免用户白跑一趟才发现传感器根本没工作。 */
+function runTrial() {
+  const btn = $('btnAuth');
+  btn.disabled = true;
+
+  S.trial = { gaps: [] };
+  trialSampleCount = 0; trialLastT = 0;
+  window.addEventListener('devicemotion', trialHandler);
+
+  const lines = renderPermLines();
+  const trialIdx = lines.length;
+  lines.push('<div class="chk"><span class="mk warn">…</span><span class="lb">试采中</span>'
+    + '<span class="vl warn">请静置或轻微晃动手机，4 秒…</span></div>');
   $('trialResult').innerHTML = lines.join('');
 
   setTimeout(() => {
@@ -515,25 +677,25 @@ async function authorize() {
 
     let verdict;
     if (got === 0) {
-      verdict = '<div class="chk"><span class="mk no">✕</span><span class="lb">试采结果</span><span class="vl no">' +
-        '4 秒内没有收到任何传感器数据。原因通常是：① 本页不是 HTTPS；② iOS 未授权运动与方向；' +
-        '③ 浏览器「运动传感器」权限被关闭。请按提示处理后重新点击授权。</span></div>';
+      verdict = '<div class="chk"><span class="mk no">✕</span><span class="lb">试采结果</span><span class="vl no">'
+        + '4 秒内没有收到任何传感器数据。原因通常是：① 本页不是 HTTPS；② iOS 未授权运动与方向；'
+        + '③ 浏览器「运动传感器」权限被关闭。请按提示处理后重新点击授权。</span></div>';
       showErr('传感器无数据', '授权看似通过，但实际收不到数据。请逐项核对上方自检结果，尤其是「安全上下文」是否为「是」。');
       sensorReady = false;
       refreshStartBtn();
     } else {
-      verdict = '<div class="chk"><span class="mk ok">✓</span><span class="lb">试采结果</span><span class="vl ok">' +
-        '收到 ' + got + ' 个样本，实测采样率约 ' + hz.toFixed(0) + ' Hz' +
-        (hz > 0 && hz < 25 ? '（偏低，可能是省电模式，建议关闭后重试）' : '') + '</span></div>';
+      verdict = '<div class="chk"><span class="mk ok">✓</span><span class="lb">试采结果</span><span class="vl ok">'
+        + '收到 ' + got + ' 个样本，实测采样率约 ' + hz.toFixed(0) + ' Hz'
+        + (hz > 0 && hz < 25 ? '（偏低，可能是省电模式，建议关闭后重试）' : '') + '</span></div>';
       sensorReady = true;
       $('s2').className = 'step done';
       refreshStartBtn();
     }
 
-    lines[lines.length - 1] = verdict;
+    lines[trialIdx] = verdict;
     $('trialResult').innerHTML = lines.join('');
-    $('btnAuth').disabled = false;
-    $('btnAuth').textContent = '重新授权 / 重新试采';
+    btn.disabled = false;
+    btn.textContent = '重新授权 / 重新试采';
   }, 4000);
 }
 
@@ -569,11 +731,17 @@ function camStreamLive() {
  *
  * 判为 suspect 时**不丢弃帧**（保留原始证据，便于事后追溯），只在 meta.json 标记。
  */
+/* ★ 复用同一块降采样画布：原先每 100ms 都 new 一个 canvas，
+ *   在 iOS 上这本就是可避免的主线程开销（分配 + GC 压力），
+ *   而主线程被占用会直接表现为 devicemotion 掉样。 */
+let _fqCanvas = null;
 function frameQuality(v) {
   const W = 60, H = 45;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!_fqCanvas) {
+    _fqCanvas = document.createElement('canvas');
+    _fqCanvas.width = W; _fqCanvas.height = H;
+  }
+  const ctx = _fqCanvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(v, 0, 0, W, H);
   let d;
   try { d = ctx.getImageData(0, 0, W, H).data; }
@@ -652,30 +820,41 @@ function stopCamera() {
   $('preview').srcObject = null;
 }
 
+/* ★ 只做一次 drawImage（毫秒级），JPEG 编码推迟到事件成立时才做。
+ *   原实现每 100ms 调一次 toDataURL('image/jpeg')——同步编码，单次数毫秒到十几毫秒，
+ *   在 iOS 上这个开销直接与 devicemotion 的投递抢主线程。改为环形画布池后：
+ *   编码次数从 10 次/秒 降到「每个事件最多 6 次」，连每帧 new canvas 的分配也一并去掉。 */
 function grabFrame() {
   const v = $('preview');
   if (!v || !v.videoWidth) return;
-  const c = document.createElement('canvas');
-  c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
-  c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
-  const q = frameQuality(v);
-  if (q) noteFrameQuality(q);
-  S.ring.push({ t: now() - S.t0, url: c.toDataURL('image/jpeg', 0.6), q: q });
-  while (S.ring.length > CFG.RING_FRAMES) S.ring.shift();
+  const ent = S.ring.length >= CFG.RING_FRAMES ? S.ring.shift() : { cv: null, t: 0, q: null };
+  if (!ent.cv) {
+    ent.cv = document.createElement('canvas');
+    ent.cv.width = CFG.FRAME_W; ent.cv.height = CFG.FRAME_H;
+  }
+  ent.cv.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
+  ent.t = now() - S.t0;
+  ent.q = frameQuality(v);
+  if (ent.q) noteFrameQuality(ent.q);
+  S.ring.push(ent);
 }
 
+let _sweepCanvas = null;
 function grabSweep() {
   const v = $('preview');
   if (!v || !v.videoWidth) return;
   // 测试模式下不判速度：静止时速度恒为 0，会把扫描帧全部清空
   if (S.mode !== 'test' && speed() < CFG.MIN_SPEED_MS) return;
-  const c = document.createElement('canvas');
-  c.width = CFG.FRAME_W; c.height = CFG.FRAME_H;
-  c.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
+  // 扫描帧每 2 秒才一张，编码开销可忽略；但仍复用画布，避免无谓分配
+  if (!_sweepCanvas) {
+    _sweepCanvas = document.createElement('canvas');
+    _sweepCanvas.width = CFG.FRAME_W; _sweepCanvas.height = CFG.FRAME_H;
+  }
+  _sweepCanvas.getContext('2d').drawImage(v, 0, 0, CFG.FRAME_W, CFG.FRAME_H);
   const q = frameQuality(v);
   if (q) noteFrameQuality(q);
   S.sweeps.push({
-    t: Math.round(now() - S.t0), url: c.toDataURL('image/jpeg', 0.6),
+    t: Math.round(now() - S.t0), url: _sweepCanvas.toDataURL('image/jpeg', 0.6),
     lat: S.gps.lat, lon: S.gps.lon, spd: +(speed() * 3.6).toFixed(1), q: q
   });
 }
@@ -715,11 +894,16 @@ function framesForEvent(peakT) {
   const lo = peakT - CFG.KEEP_BEFORE_MS, hi = peakT + CFG.KEEP_AFTER_MS;
   const cand = S.ring.filter(f => f.t >= lo && f.t <= hi);
   if (!cand.length) return [];
-  if (cand.length <= CFG.MAX_FRAMES_PER_EVENT) return cand;
-  const step = (cand.length - 1) / (CFG.MAX_FRAMES_PER_EVENT - 1);
-  const out = [];
-  for (let i = 0; i < CFG.MAX_FRAMES_PER_EVENT; i++) out.push(cand[Math.round(i * step)]);
-  return out;
+  let pick;
+  if (cand.length <= CFG.MAX_FRAMES_PER_EVENT) {
+    pick = cand;
+  } else {
+    const step = (cand.length - 1) / (CFG.MAX_FRAMES_PER_EVENT - 1);
+    pick = [];
+    for (let i = 0; i < CFG.MAX_FRAMES_PER_EVENT; i++) pick.push(cand[Math.round(i * step)]);
+  }
+  // 到这里才做 JPEG 编码：环形缓存里存的是画布，不是 base64 字符串
+  return pick.map(f => ({ t: f.t, url: f.cv.toDataURL('image/jpeg', 0.6), q: f.q }));
 }
 
 /* ============================ 信号处理与检测 ============================ */
@@ -728,7 +912,16 @@ const COLOR = { '坑洼': '#A32D2D', '减速带': '#854F0B', '井盖': '#185FA5'
 function onMotion(ev) {
   if (!S.recording) return;
   const t = now();
-  const dt = S.lastT ? Math.min((t - S.lastT) / 1000, 0.2) : 1 / 60;
+  // ★ 掉样监控：手指按住屏幕时 iOS 会停投 devicemotion（见 CSS 中 recording 的说明），
+  //   表现为采样间隔突然拉大。把异常间隔记下来，界面当场可见，也随包落盘，
+  //   用于事后判断某一趟数据有没有受此影响。
+  const gap = S.lastT ? t - S.lastT : 0;
+  if (gap > 250) {
+    S.drops.n++;
+    S.drops.total += gap;
+    if (gap > S.drops.max) S.drops.max = Math.round(gap);
+  }
+  const dt = S.lastT ? Math.min(gap, 200) / 1000 : 1 / 60;
   S.lastT = t; S.motionCount++;
 
   const ai = ev.accelerationIncludingGravity;
@@ -772,8 +965,9 @@ function onMotion(ev) {
   });
 
   detect(t, S.smooth, spd);
-  updateMetrics(t);
-  drawWave();
+  // ★ 不在 60Hz 回调里碰 DOM。所有界面刷新交给下面 10Hz 的 uiTick。
+  //   iOS 的 devicemotion 在主线程投递：回调里每帧写 DOM 会占住主线程，直接导致掉样。
+  S.uiDue = true;
 }
 
 function detect(t, v, spd) {
@@ -1121,9 +1315,40 @@ function updateMetrics(t) {
   $('mEvent').textContent = S.events.length;
 }
 
+/* ★ UI 刷新与传感器解耦：传感器回调（约 60Hz）只做纯计算 + 入队，
+ *   所有 DOM 写入集中在 10Hz 的这一个 tick 里。 */
+function uiTick() {
+  if (!S.recording) return;
+  updateMetrics(now());
+  drawWave();
+  updateDropWarn();
+}
+
+function updateDropWarn() {
+  const el = $('dropWarn');
+  if (!el) return;
+  const d = S.drops;
+  if (!d.n) {
+    el.innerHTML = '采样连续，未检测到中断。';
+    el.className = 'gatewarn';
+    return;
+  }
+  const bad = d.max > 800 || d.total > 3000;
+  el.innerHTML = (bad ? '⚠ ' : '') + '采样中断 ' + d.n + ' 次，最长 ' + d.max + ' ms（累计 '
+    + (d.total / 1000).toFixed(1) + ' s）。'
+    + 'iOS 在手指按住屏幕时会暂停 devicemotion 投递 —— 采集期间请勿触碰屏幕；'
+    + '本页已在采集中锁定页面滚动以尽量规避。';
+  el.className = 'gatewarn on';
+}
+
 /* ============================ 标定与列表 ============================ */
-function renderEvents() {
+function renderEvents(force) {
   const box = $('evList');
+  // ★ 采集中事件列表是隐藏的，重建它纯属浪费：innerHTML 里塞的是 base64 图片，
+  //   每出一个事件就要把整列表重新解码一遍。改为标记为脏，等 stop() 时一次性渲染。
+  if (!force && S.recording && $('labelCard').classList.contains('hidden')) {
+    S.evDirty = true; return;
+  }
   if (!S.events.length) { box.innerHTML = '<p class="empty">尚未检出事件</p>'; return; }
   box.innerHTML = S.events.slice().reverse().map(e => {
     const t = e.manual || e.auto;
@@ -1167,7 +1392,7 @@ function renderEvents() {
         if (!e) return;
         e.manual = b.dataset.l;
         flash('已标为「' + b.dataset.l + '」');
-        renderEvents();
+        renderEvents(true);
       };
     });
   });
@@ -1180,15 +1405,18 @@ async function start() {
   // 摄像头必须在点击手势内同步发起 —— await 之后手势失效，iOS 会静默拒绝。
   const camPromise = camStreamLive() ? Promise.resolve(true) : startCamera();
 
-  try {
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+  // iOS 的运动传感器权限：若第 2 步已授权就直接跳过。
+  // 不再无脑重问 —— 重复弹原生对话框没有意义，还会打断同一次手势里的摄像头启动。
+  if (needMotionPermission() && motionState !== 'granted') {
+    try {
       const r = await DeviceMotionEvent.requestPermission();
+      motionState = r === 'granted' ? 'granted' : 'denied';
       if (r !== 'granted') {
         showErr('传感器授权失败', '请在 设置 → Safari → 运动与方向访问 中允许后重试。');
         return;
       }
-    }
-  } catch (e) { showErr('传感器授权异常', e.message); return; }
+    } catch (e) { showErr('传感器授权异常', e.message); return; }
+  }
 
   S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
 
@@ -1197,9 +1425,12 @@ async function start() {
     inEvent: false, cur: null, lastEnd: 0, lastT: 0, motionCount: 0,
     g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0, thr: CFG.MIN_THRESHOLD,
     prevFix: null, t0: now(),
-    gateBlocked: 0, blockEp: false, spdMax: 0, spdUsable: false
+    gateBlocked: 0, blockEp: false, spdMax: 0, spdUsable: false,
+    drops: { n: 0, max: 0, total: 0 }, uiDue: false, evDirty: false
   });
   $('gateWarn').className = 'gatewarn';
+  $('dropWarn').className = 'gatewarn';
+  $('frameWarn').className = 'gatewarn';
 
   window.addEventListener('devicemotion', onMotion);
   if (!S.gpsWatch) {
@@ -1238,6 +1469,14 @@ async function start() {
     }
   }, 8000);
 
+  // ★ 采集中锁定页面：iOS 在「可滚动页面」上按手指会把主线程 RunLoop 切到
+  //   UITrackingRunLoopMode，而 WebKit 的 devicemotion 事件源只注册在 default mode，
+  //   于是采样直接停摆。锁定后页面不可滚动，从根上避免进入该模式；
+  //   同时界面只剩实时面板，不会被误滑走。
+  document.documentElement.classList.add('recording');
+  $('recBar').classList.add('on');
+  $('btnStopRec').onclick = stop;
+
   $('ctrl').innerHTML = '<button class="stop" id="btnStart">结束采集</button>';
   $('btnStart').onclick = stop;
   $('liveCard').classList.remove('hidden');
@@ -1247,6 +1486,10 @@ async function start() {
   $('modeHint').textContent = S.mode === 'test'
     ? '当前：手持 / 静止测试模式，速度门控已关闭。'
     : '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+  // 10Hz 界面刷新（传感器回调不再直接写 DOM）
+  clearInterval(S.uiTimer);
+  S.uiTimer = setInterval(uiTick, 100);
+  updateDropWarn();
   renderEvents();
 }
 
@@ -1254,6 +1497,9 @@ function stop() {
   S.recording = false;
   window.removeEventListener('devicemotion', onMotion);
   clearTimeout(S._wd);
+  clearInterval(S.uiTimer); S.uiTimer = null;
+  document.documentElement.classList.remove('recording');
+  $('recBar').classList.remove('on');
   if (S.frameTimer) { clearInterval(S.frameTimer); S.frameTimer = null; }
   if (S.sweepTimer) { clearInterval(S.sweepTimer); S.sweepTimer = null; }
   if (S.gpsWatch) { navigator.geolocation.clearWatch(S.gpsWatch); S.gpsWatch = null; }
@@ -1267,7 +1513,8 @@ function stop() {
   $('liveCard').classList.add('hidden');
   $('s4').className = 'step done';
   $('s5').className = 'step done';
-  renderEvents();
+  updateDropWarn();
+  renderEvents(true);   // 采集中挂起的渲染在这里一次补齐
   paint();
 }
 
@@ -1364,7 +1611,7 @@ function metaObj() {
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
   const nJoint = S.events.filter(e => e.is_joint_candidate).length;
   return {
-    version: '0.5', exported_at: new Date().toISOString(),
+    version: '0.6', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
     sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
@@ -1410,7 +1657,7 @@ function metaObj() {
       step4: '平滑 smooth = ema(hp, tau=10ms)',
       step5: '噪声底 = quantile(|smooth|, 20%)，取最近 3 秒尾部窗口',
       step6: '门限 = max(1.2, 4 × 噪声底)',
-      step7: 'start: 速度 ≥ 8 km/h (测试模式跳过) 且 smooth > 门限 且 距上次结束 > 600 ms',
+      step7: 'start: 速度 ≥ 8 km/h (测试模式跳过) 且 smooth > 门限 且 距上次结束 > ' + CFG.REFRACTORY_MS + ' ms',
       step8: 'end: smooth < 门限 × 0.5 且持续 ≥ 60 ms，或事件已达 3000 ms',
       why_quantile: '用分位数而非滚动标准差：事件自身会抬高局部标准差、把自己屏蔽掉',
     },
@@ -1438,6 +1685,29 @@ function metaObj() {
         known_limit: '带渐变的灰色遮挡物（std≈9.8, cast≈0）为已知边界漏检，概率低'
       },
       last_frame_sample: S.frameQ.last
+    },
+    // 掉样监控：iOS 上手指按住屏幕会让 devicemotion 停止投递，采样出现大间隔。
+    // 本字段用于事后判断某一趟数据有没有受此影响，不必重新读原始波形。
+    sampling_gaps: {
+      count: S.drops.n,
+      max_ms: S.drops.max,
+      total_ms: Math.round(S.drops.total),
+      usable: S.drops.max <= 800 && S.drops.total <= 3000,
+      note: '★ iOS 在手指按住屏幕时，会把主线程 RunLoop 切到 UITrackingRunLoopMode；'
+        + 'WebKit 的 devicemotion 事件源只注册在 default mode，因而停止投递，'
+        + '表现为采样间隔突然拉大（Apple WWDC "Run Loop" 一节描述过该模式切换）。'
+        + '采集端已通过「采集中锁定页面滚动」+「UI 刷新与传感器回调解耦」规避；'
+        + '仍建议采集期间不要触碰屏幕。阈值：单次中断 <= 800ms 且累计 <= 3s 视为可用。'
+    },
+    permission: {
+      platform: isIOS() ? 'ios' : 'other',
+      motion_state: motionState,           // null | 'granted' | 'denied' | 'n/a'
+      motion_note: 'iOS 13+ 的运动传感器需要用户手势中显式授权；'
+        + '本采集端把「定位+摄像头」与「运动传感器」拆到两次点击，'
+        + '因为一次手势只能弹出一个原生权限对话框。',
+      geolocation_usable: S.gps.lat != null,
+      geolocation_note: 'iOS 的定位是双层授权：浏览器站点设置 + 系统「隐私与安全性 → 定位服务」。'
+        + '只开前者时 navigator.permissions 会报 granted，但 getCurrentPosition 仍返回 code 1。'
     },
     method: {
       gravity_tau_s: CFG.TAU_GRAVITY, smooth_tau_s: CFG.TAU_SMOOTH,
@@ -1590,8 +1860,7 @@ document.querySelectorAll('input[name=mode]').forEach(r => {
 });
 
 $('btnAuth').onclick = authorize;
-$('btnZip').onclick = exportZip;
-$('btnJson').onclick = () => download('roadcheck_' + stamp() + '.json',
+$('btnZip').onclick = exportZip;$('btnJson').onclick = () => download('roadcheck_' + stamp() + '.json',
   new Blob([JSON.stringify({ meta: metaObj(), samples: S.samples, events: S.events.map(e => ({ ...e, frames: undefined })) }, null, 2)],
     { type: 'application/json' }));
 $('btnRaw').onclick = () => download('roadcheck_raw_' + stamp() + '.csv', new Blob([rawCsv()], { type: 'text/csv;charset=utf-8' }));
@@ -1601,11 +1870,13 @@ $('btnReset').onclick = () => {
   S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
   S.gateBlocked = 0; S.blockEp = false; S.spdMax = 0; S.spdUsable = false;
   S.frameQ = { n: 0, suspect: 0, last: null };
+  S.drops = { n: 0, max: 0, total: 0 };
   $('exportCard').classList.add('hidden');
   $('labelCard').classList.add('hidden');
   $('gateWarn').className = 'gatewarn';
   $('frameWarn').className = 'gatewarn';
-  renderEvents(); paint();
+  $('dropWarn').className = 'gatewarn';
+  renderEvents(true); paint();
   $('mSpeed').innerHTML = '0<small>km/h</small>';
   $('mTime').innerHTML = '0<small>s</small>';
   $('mRate').innerHTML = '0<small>Hz</small>';
@@ -1614,8 +1885,17 @@ $('btnReset').onclick = () => {
 };
 
 S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
+motionState = needMotionPermission() ? null : 'n/a';
 $('modeHint').textContent = '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
 bindCollectorFields();
+
+/* ★ 采集中禁掉滚动手势（iOS 各版本对 touch-action 的支持不一致，这里做双保险）。
+ *   必须 passive:false 才允许 preventDefault；只拦 touchmove 不拦 touchstart，
+ *   否则「结束采集」按钮的点击会被一起吃掉。 */
+document.addEventListener('touchmove', e => {
+  if (S.recording && e.cancelable) e.preventDefault();
+}, { passive: false });
+
 probe();
 </script>
 </body>
