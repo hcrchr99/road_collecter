@@ -15,7 +15,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.svg">
-<title>路面体检 · 采集端 v0.6</title>
+<title>路面体检 · 采集端 v0.7</title>
 <style>
   :root{
     --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
@@ -77,7 +77,8 @@
   .stop{background:var(--red);border-color:var(--red);color:#fff;}
   .sm{font-size:13px;padding:9px 10px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
-  .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;}
+  /* 6 个标签：3 列 × 2 行，比硬塞 5 列更好点按 */
+  .labels{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;}
   .labels button{padding:9px 2px;font-size:12px;}
   .lg-p{background:var(--red-bg);border-color:#F0C9C9;color:var(--red);}
   .lg-b{background:var(--amber-bg);border-color:#EFD9AE;color:var(--amber);}
@@ -139,7 +140,7 @@
 <body>
 <div class="wrap">
 
-  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.6</span></h1>
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.7</span></h1>
   <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
 
   <div class="err" id="err"></div>
@@ -200,7 +201,7 @@
     <div class="modes">
       <label><input type="radio" name="mode" value="ride" checked>
         <span class="mt">骑行 / 车载</span>
-        <span class="md">速度门控 8 km/h 生效，抑制人体动作误报。正式采集请用这个</span></label>
+        <span class="md">低于 8 km/h 时记录的事件会打 low_speed 标记（不再丢弃）。正式采集请用这个</span></label>
       <label><input type="radio" name="mode" value="test">
         <span class="mt">手持 / 静止测试</span>
         <span class="md">关闭速度门控，用于室内模拟验证信号链路。此时速度读数无意义</span></label>
@@ -258,18 +259,57 @@ const CFG = {
   TAU_GRAVITY: 0.5, TAU_SMOOTH: 0.010,
   NOISE_WIN_S: 3.0, NOISE_Q: 0.20, NOISE_K: 4.0, MIN_THRESHOLD: 1.2,
   RELEASE_RATIO: 0.5,
-  // ★ 不应期：控制「多久才算一次新事件」，是抑制连续颠簸碎片化的主参数。
-  //   实测 145 个事件实际只对应 7 段真实路面变化，其中一段 74 个事件挤在 70.8s 内
-  //   （平均间隔 969ms），而旧值 600ms 恰好卡在真实颠簸间隔之下，完全失去抑制作用。
-  //   连续颠簸路段每帧都超门限，抬高门限收效甚微（实测只减 14%），真正管用的是不应期。
-  //
-  //   取值取舍（实采包 12km/h ≈ 3.33m/s，不应期直接等于里程盲区）：
-  //     600ms → 167 事件 / 6 簇 / 最大簇 82 个   （碎片化严重，不可用）
-  //    1500ms →  83 事件 / 11 簇 / 最大簇 26 个  （★ 选用：压住碎片化，仍保留路段内多事件）
-  //    3000ms →  46 事件 / 46 簇 / 最大簇  1 个  （矫枉过正：每段只剩 1 个点，路段形态丢失）
-  //   3000ms 意味着 10 米内只报一次，会把同一条烂路上相隔 5~8 米的两个坑合并成一个，
-  //   属于「为了少报而丢真相」。1500ms 对应 5 米盲区，与坑洼的空间尺度相称。
-  REFRACTORY_MS: 1500, MAX_EVENT_MS: 3000,
+  /* ★ 不应期 = 「多少米内只报一次」，按里程定义，再按当前车速换算成毫秒。
+   *
+   * ── 为什么写成固定毫秒是错的
+   *   不应期物理上就是「空间盲区」。写死时间会让盲区随速度变化：
+   *   慢速时盲区反而更短，不合物理直觉。
+   *
+   * ── ★ 取值的正确判据（重要：这里曾经写错过，留下的教训）
+   *   不应期只用两个「物理域」的约束定，**不含语义域**：
+   *
+   *   ① 信号域：两次冲击的波形不能重叠
+   *      → 下限 = 单次冲击的波形总时长（含振铃）
+   *      实测（把不应期放到 0，纯靠「信号回落到释放线以下」自然分离）：
+   *        华孝贤 20260922 包 @11.6 km/h：中位 102 ms / P90 223 ms / P99 595 ms
+   *        换算里程：0.33 m / 0.72 m / 1.92 m
+   *      P90 的 0.72 m 是可分性的现实下限（更长的尾巴是衰减，不是冲击宽度）。
+   *
+   *   ② 车辆域：同一处障碍不能被前后轮各报一次
+   *      → 下限 = 轴距。共享单车 ≈ 1.05 m；小汽车 ≈ 2.6 m。
+   *      ★ 这一项**依赖车型**，所以盲区值本身应该随车辆类型变
+   *        （这正是 meta 需要记录 mount / vehicle 的原因）。
+   *
+   *   ✗ 曾经用过的错误判据（v0.7 初版，用户指出后作废）：
+   *     「两处独立病害若相距 2.5 m 以内，属于同一片破损区，应由路段层描述」
+   *     —— 这是拿**面要素（路段）的语义**去决定**点要素（事件）的粒度**，
+   *     方向反了。路段层是从事件层聚合出来的（segments() 消费 S.events），
+   *     不能反过来裁剪事件层。而且若真按「一片破损区只留一个点」来做，
+   *     路段层反而没料可聚 —— 路段的严重度恰恰来自它的点密度与峰值分布。
+   *
+   *   ⇒ 取 max(0.72, 1.05) 再留余量 → **1.2 m**
+   *
+   * ── 实测扫描（华孝贤 20260922 包，1327 m / 7.5 min；此时门限未改，仍为 ≈1σ）
+   *     盲区   事件数  每分   密度(个/km)  生效不应期中位
+   *     0.6 m   746   98.9     562         250 ms  ← 撞下限，再小也没用
+   *     0.8 m   729   96.7     549         250 ms
+   *     1.0 m   676   89.6     509         305 ms
+   *     ★1.2 m  608   80.6     458         366 ms  ← 本次采用
+   *     1.5 m   540   71.6     407         457 ms
+   *     2.0 m   449   59.5     338         610 ms
+   *     2.5 m   387   51.3     292         765 ms  ← 旧值（依据已作废）
+   *     固定1500 244   32.4     184        1500 ms
+   *
+   * ⚠️ 上表每一个都还是「每公里 184~562 个」，比真实病害密度高 1~2 个数量级。
+   *    这说明**事件密度由门限决定，不由不应期决定** —— 不应期只是二道防线。
+   *    1σ 门限不修，盲区取 1.2 还是 2.5 都只是在给噪声打折。
+   *    标定完成、门限改为 4×本底后，事件数会回落到约 90 个量级；届时再按上表重定盲区。
+   */
+  BLIND_ZONE_M: 1.2,
+  REFRACTORY_MIN_MS: 250,       // 高速时不要短于这个（防止同一处病害被拆成多报）
+  REFRACTORY_MAX_MS: 1500,      // 低速/无速度时不要长于这个（防止整段只报一个点）
+  REFRACTORY_FALLBACK_MS: 800,  // 速度不可用（静止测试、GPS 失效）时用这个
+  MAX_EVENT_MS: 3000,
   MIN_SPEED_MS: 8 / 3.6,
   FRAME_MS: 100, RING_FRAMES: 24,
   KEEP_BEFORE_MS: 1200, KEEP_AFTER_MS: 400, MAX_FRAMES_PER_EVENT: 6,
@@ -314,10 +354,13 @@ const S = {
   stream: null, frameTimer: null, sweepTimer: null, ring: [], sweeps: [],
   trial: null,
   mode: 'ride',        // 'ride' | 'test'
+  // ★ 模式变更时间线。原先 meta 只记导出那一刻的 mode，中途切换就会撒谎
+  //   （实测 tang 包：标 handheld_test，但前 59s 事件为 0、gate 拦下 235 段、
+  //    速度恒为 0 —— 说明起始其实是 ride 模式，用户中途才切到 test）。
+  modeChanges: [],
   collector: '',       // 采集者姓名/代号（必填，写入 meta.json，不可再生）
   route: '',           // 路段备注（选填）
-  gateBlocked: 0,      // 被速度门控拦下的候选事件段数
-  blockEp: false,      // 是否正处于"超门限但被门控拦下"的连续段
+  lowSpeedEvents: 0,   // 速度不足时仍记录、但被标记的事件数（不再丢弃）
   spdMax: 0, spdUsable: false,
   // 帧有效性自检的累积统计（镜头遮挡是真实发生过的故障，须当场可见）
   frameQ: { n: 0, suspect: 0, last: null },
@@ -907,7 +950,7 @@ function framesForEvent(peakT) {
 }
 
 /* ============================ 信号处理与检测 ============================ */
-const COLOR = { '坑洼': '#A32D2D', '减速带': '#854F0B', '井盖': '#185FA5', '粗糙路面': '#3B6D11', '其他': '#888780', '误报': '#3B6D11', '未标定': '#9A9992' };
+const COLOR = { '坑洼': '#A32D2D', '减速带': '#854F0B', '井盖': '#185FA5', '粗糙路面': '#3B6D11', '设计接缝': '#5C7A99', '井盖/减速带': '#185FA5', '疑似浅坑': '#854F0B', '未定': '#888780', '其他': '#888780', '误报': '#3B6D11', '未标定': '#9A9992' };
 
 function onMotion(ev) {
   if (!S.recording) return;
@@ -957,20 +1000,31 @@ function onMotion(ev) {
 
   const gyr = ev.rotationRate || {};
   const spd = speed();
+  // 运动判定在采集时就定下来、并逐样本落盘：模式中途切换时，事后才能重建
+  // 「当时哪些样本被认为在移动」。原先 meta 只有一个最终 mode，无法复现。
+  const moving = (S.mode === 'test') || (spd >= CFG.MIN_SPEED_MS);
   S.samples.push({
     t: Math.round(t - S.t0), ax: +lx.toFixed(4), ay: +ly.toFixed(4), az: +lz.toFixed(4),
     gx: gyr.beta, gy: gyr.gamma, gz: gyr.alpha,
     lat: S.gps.lat, lon: S.gps.lon, spd: +spd.toFixed(3),
-    hp: +hp.toFixed(4), vz: +vz.toFixed(4)
+    hp: +hp.toFixed(4), vz: +vz.toFixed(4), moving: moving ? 1 : 0
   });
 
-  detect(t, S.smooth, spd);
+  detect(t, S.smooth, spd, moving);
   // ★ 不在 60Hz 回调里碰 DOM。所有界面刷新交给下面 10Hz 的 uiTick。
   //   iOS 的 devicemotion 在主线程投递：回调里每帧写 DOM 会占住主线程，直接导致掉样。
   S.uiDue = true;
 }
 
-function detect(t, v, spd) {
+/* 不应期换算：把「盲区多少米」按当前车速折成毫秒。
+ * 速度不可用（静止测试、GPS 失效）时退回固定值。 */
+function refractoryMs(spdMs) {
+  if (!(spdMs > 0.5)) return CFG.REFRACTORY_FALLBACK_MS;
+  const ms = CFG.BLIND_ZONE_M / spdMs * 1000;
+  return Math.max(CFG.REFRACTORY_MIN_MS, Math.min(CFG.REFRACTORY_MAX_MS, ms));
+}
+
+function detect(t, v, spd, moving) {
   // ★ v = smooth，是「带符号」的交流分量（有正有负）。
   //   幅值判定一律用 a = |v|；符号另有用途（见 vz 的凸起/凹陷判定）。
   const a = Math.abs(v);
@@ -983,26 +1037,22 @@ function detect(t, v, spd) {
   const thr = Math.max(CFG.MIN_THRESHOLD, CFG.NOISE_K * floor);
   S.thr = thr;
 
-  const moving = (S.mode === 'test') || (spd >= CFG.MIN_SPEED_MS);
-
   if (!S.inEvent) {
     if (a > thr) {
-      if (!moving) {
-        // 超了门限却没通过速度门控：记一笔，并在界面上明确提示。
-        // 上一版就是在这里静默丢弃，导致"信号明明很强却一个事件都没有"。
-        if (!S.blockEp) { S.blockEp = true; S.gateBlocked++; updateGateWarn(); }
-      } else {
-        S.blockEp = false;
-        if ((t - S.lastEnd) > CFG.REFRACTORY_MS) {
-          S.inEvent = true;
-          // ★ 必须把「触发帧」自身的幅值计入峰值，并用 sumSq/n 同时起算。
-          //   旧代码 peak 初值为 0 且漏掉触发帧，而真实冲击是「一个正尖峰后立刻转负」，
-          //   导致 peak 永远停在 0 附近——实测 145 个事件中 27 个（18.6%）peak 低于门限。
-          S.cur = { t0: t, peak: a, sumSq: v * v, n: 1, sig: [v], vzMin: 0, vzMax: 0 };
-        }
+      if ((t - S.lastEnd) > refractoryMs(spd)) {
+        S.inEvent = true;
+        // ★ 必须把「触发帧」自身的幅值计入峰值，并用 sumSq/n 同时起算。
+        //   旧代码 peak 初值为 0 且漏掉触发帧，而真实冲击是「一个正尖峰后立刻转负」，
+        //   导致 peak 永远停在 0 附近——实测 145 个事件中 27 个（18.6%）peak 低于门限。
+        // ★ v0.7：速度不足时不再丢弃，改为照常记录并打 low_speed 标记。
+        //   门控本意是滤掉人体动作误报，但「是否移动」是个二值开关，代价是
+        //   低速通过坑洼（起步、上坡、减速、GPS 速度滞后）时的真实事件被静默删掉。
+        //   实测一趟 452s 骑行：33.5s 的超门限信号、47 段被丢弃，起步与停车两段完全空白。
+        //   现在把判断权交给下游：标记留给分析端，采到的数据先保住。
+        S.cur = { t0: t, peak: a, sumSq: v * v, n: 1, sig: [v], vzMin: 0, vzMax: 0,
+                  lowSpeed: !moving };
+        if (!moving) S.lowSpeedEvents++;   // 界面刷新交给 uiTick，回调里不碰 DOM
       }
-    } else {
-      S.blockEp = false;
     }
   } else {
     const c = S.cur;
@@ -1024,6 +1074,7 @@ function detect(t, v, spd) {
         peak: +c.peak.toFixed(2), rms: +Math.sqrt(c.sumSq / Math.max(c.n, 1)).toFixed(2),
         lat: S.gps.lat, lon: S.gps.lon, spd: +(spd * 3.6).toFixed(1),
         auto: autoType(c.peak, dur, bump, bumpMargin), bump: bump,
+        low_speed: !!c.lowSpeed,
         manual: null,
         frames: framesForEvent(c.t0 - S.t0)
       };
@@ -1082,7 +1133,9 @@ function autoType(peak, durMs, bump, margin) {
  *        远小于 SEG_GAP_MS，必然被并进同一段）
  *     ② 丢特征：聚成段后只输出「本段 N 个事件」，缝距周期性这一最关键的
  *        判别依据反而消失了
- *   因此设计接缝降级为【事件级】分类（见 markJoints()），且不参与路段聚合。
+ *   因此设计接缝降级为【事件级】分类，且不参与路段聚合。
+ *   ★ v0.7 补充：连这个「事件级候选标记」也一并删除了（见下方注释）——
+ *     它测的其实是检测器自己的不应期节拍，不是路面结构。
  */
 function segments() {
   const ev = S.events;
@@ -1119,9 +1172,6 @@ function segments() {
       const sd = Math.sqrt(gaps.reduce((a, x) => a + (x - mean) ** 2, 0) / gaps.length);
       reg = { mean_ms: Math.round(mean), cv: +(mean ? sd / mean : 0).toFixed(2) };
     }
-    // 缝距：间隔 × 车速，用于对照混凝土路面缩缝设计间距（4~5m）
-    const jointM = reg ? +(reg.mean_ms / 1000 * (spd / 3.6)).toFixed(2) : null;
-
     let kind, note;
     if (list.length < CFG.SEG_MIN_EVENTS) {
       kind = '孤立病害点';
@@ -1135,17 +1185,13 @@ function segments() {
       note = '短距离内多个事件';
     }
 
-    // ★ 段内设计接缝候选数：只作提示，不改变路段性质。
-    //   注意是「候选」不是「确认」——振动信号无法确证接缝，见 markJoints() 说明。
-    const nJoint = list.filter(e => e.is_joint_candidate).length;
-
     return {
       id: i,
       kind: kind, note: note,
       t_start: Math.round(t0), t_end: Math.round(tEnd),
       span_s: +span.toFixed(1), length_m: lenM,
       event_count: list.length,
-      joint_candidate_count: nJoint,
+      low_speed_count: list.filter(e => e.low_speed).length,
       peak_max: Math.max(...list.map(e => e.peak)),
       peak_p90: p90,
       peak_median: +peaks[Math.floor((peaks.length - 1) / 2)].toFixed(2),
@@ -1155,79 +1201,30 @@ function segments() {
       n_sunken: nD, n_bulge: nU,
       gap_mean_ms: reg ? reg.mean_ms : null,
       gap_cv: reg ? reg.cv : null,
-      joint_spacing_m: jointM,
       event_ids: list.map(e => e.id),
-      // 计入健康度：路段是振动证据本身，在视觉确认前不应因「疑似接缝」而豁免
       counts_toward_rhi: true
     };
   });
 }
 
-/* ================== 设计接缝（事件级「候选」标记） ==================
- * 为什么在事件层：见上方 segments() 注释中的 v0.5 修正说明。
+/* ================== 关于「设计接缝」检测：已废弃（v0.7） ==================
+ * 曾经有一个 markJoints()，对每个事件用「前后各 2 个邻居的间隔 CV < 0.25
+ * 且换算缝距落在 3~6.5 m」来标出「疑似设计接缝候选」。已删除，原因：
  *
- * ★ 重要限制（务必先读）
- *   本函数产出的是【候选】而非【结论】——is_joint_candidate。
- *   原因：用实采包标定后发现，纯振动信号无法可靠区分设计接缝与普通坑洼。
+ * 该特征测的不是路面，而是检测器自己。
+ *   实测：206 个事件里 158 个（77%）被标为候选。因为事件间隔被不应期锁在约 1.7 s，
+ *   1.7 s × 3.2 m/s ≈ 5.44 m，正好落进「设计缝距 3~6.5 m」的判据区间 ——
+ *   而那个 1.7 s 的节奏来自不应期，与路面结构无关。
+ *   （更早的 20260920 包也得到相同的结论：多判据扫描最高只能挑出 47%，
+ *     越严格越接近随机抽样，是"特征不存在"的典型表现。）
  *
- *   证据：相邻事件间隔换算的缝距分布为
- *     最小 3.49 / P25 4.79 / 中位 5.63 / P75 6.53 / 最大 57.34 (m)
- *     落在 3~6.5m 区间：56/76 = 74%
- *   看似「大量接缝」，但这是因果倒置：74% 的间隔都落在这个窄带，
- *   恰恰说明它不是一个有判别力的特征。真实来源是骑行速度下
- *   （12km/h ≈ 3.33m/s）车轮转动 + 检测器不应期的乘积节拍：
- *   不应期 1500ms × 3.33m/s ≈ 5.0m，与「设计缝距 4~5m」数值巧合重合。
- *   实测：多种判据扫描下最高只能挑出 47%，且越严格越接近随机抽样。
+ * 教训：任何「规律性」特征，先排除它是不是自己算法的节拍。
+ *   把检测器的参数映射成"物理特征"再当作判别依据，会得到看起来很有说服力、
+ *   实际上完全循环论证的结果。
  *
- *   结论：设计接缝的最终判定必须依赖【视觉】——水泥缝在图像上是
- *   贯穿路面的直线，与坑洼的局部块状破损形态完全不同，这是振动
- *   信号给不了的信息。因此本函数只做粗筛，把「间隔规整且缝距合理」
- *   的事件标为候选，供下游视觉环节优先复核。
- *
- * 粗筛判据：局部窗口（前后各 2 个邻居）间隔 CV < 0.25 且换算缝距 3~6.5m。
- * 换算缝距 = 间隔(ms) / 1000 × 车速(m/s)。
- * 标记后该事件不计入健康度，但仍保留在事件列表与轨迹中。
+ * 现在「设计接缝」只保留为**人工标注选项**（看着图点一下），
+ * 不再由振动信号自动推断 —— 缝在图像上是贯穿路面的直线，这是振动给不了的信息。
  */
-function markJoints() {
-  const ev = S.events;
-  for (const e of ev) {
-    e.is_joint_candidate = false;
-    e.is_joint = false;          // 保留字段位，恒为 false —— 结论只能由视觉环节给出
-    e.joint_spacing_m = null;
-    e.joint_cv = null;
-  }
-
-  const W = 2;   // 前后各取 2 个邻居
-  for (let i = 0; i < ev.length; i++) {
-    if (i < W || i >= ev.length - W) continue;
-    const win = ev.slice(i - W, i + W + 1);
-    const gaps = [];
-    for (let k = 1; k < win.length; k++) {
-      const g = win[k].t - (win[k - 1].t + win[k - 1].duration);
-      if (g > 0) gaps.push(g);
-    }
-    if (gaps.length < 3) continue;
-    const mean = gaps.reduce((a, x) => a + x, 0) / gaps.length;
-    if (mean <= 0) continue;
-    const sd = Math.sqrt(gaps.reduce((a, x) => a + (x - mean) ** 2, 0) / gaps.length);
-    const cv = sd / mean;
-    const spd = win.reduce((a, x) => a + (x.spd || 0), 0) / win.length;   // km/h
-    const jointM = mean / 1000 * (spd / 3.6);
-
-    if (cv >= 0.25) continue;
-    if (jointM < 3 || jointM > 6.5) continue;
-
-    // 该事件自身与左右邻居的间隔也要贴合窗口均值（差值 < 25%）
-    const gPrev = ev[i].t - (ev[i - 1].t + ev[i - 1].duration);
-    const gNext = ev[i + 1].t - (ev[i].t + ev[i].duration);
-    const near = (g) => g > 0 && Math.abs(g - mean) / mean < 0.25;
-    if (!near(gPrev) || !near(gNext)) continue;
-
-    ev[i].is_joint_candidate = true;
-    ev[i].joint_spacing_m = +jointM.toFixed(2);
-    ev[i].joint_cv = +cv.toFixed(2);
-  }
-}
 
 /* 路段类型配色（与事件配色体系区分开：路段是面要素，用较柔和的色） */
 const SEG_COLOR = {
@@ -1236,23 +1233,26 @@ const SEG_COLOR = {
   '孤立病害点': '#888780'
 };
 
+/* 速度门控的提示（v0.7 起语义已变）
+ * ★ 旧语义：速度不足 → 事件被丢弃 → 这里只报「拦下了 N 段」。
+ *   问题：静默删数据。实测一趟 452s 骑行丢了 33.5s 的超门限信号，
+ *   起步与停车两段完全空白，且事后无法从包内重建"哪里被删了"。
+ * ★ 新语义：速度不足 → 事件照记，只打 low_speed 标记 → 这里提示标记数量。
+ *   判断权交给分析端：采到的数据先保住，要不要用由下游按 low_speed 过滤。 */
 function updateGateWarn() {
   const el = $('gateWarn');
-  if (S.mode === 'test') {
-    if (S.gateBlocked > 0) {
-      el.innerHTML = '测试模式已关闭速度门控。';
-      el.className = 'gatewarn on';
-    } else { el.className = 'gatewarn'; }
-    return;
-  }
-  if (S.gateBlocked === 0) { el.className = 'gatewarn'; return; }
+  if (!el) return;
+  if (!S.lowSpeedEvents) { el.className = 'gatewarn'; return; }
   const spdTxt = S.spdUsable
     ? '当前最大速度 ' + (S.spdMax * 3.6).toFixed(1) + ' km/h'
-    : '定位速度全程为 0（静止或室内无有效速度）';
-  el.innerHTML = '<b>有 ' + S.gateBlocked + ' 段振动超过了门限，但被速度门控拦下，未记为事件。</b><br>'
-    + '原因：' + spdTxt + '，未达到 8 km/h 的判定门槛。<br>'
-    + '如果你确实在骑行，说明定位速度不可靠，可改用手持/静止测试模式；'
-    + '如果是在原地模拟，请选测试模式。';
+    : '定位速度全程为 0（静止、室内，或 GPS 尚未给出速度）';
+  el.innerHTML = '<b>' + S.lowSpeedEvents + ' 个事件是在速度不足 8 km/h 时记录的，'
+    + '已标记 low_speed，仍写入数据包。</b><br>'
+    + (S.mode === 'test'
+        ? '当前是手持/静止测试模式，速度门控本就不参与判定，全部带此标记属正常。'
+        : '原因：' + spdTxt + '。这些事件可能是人体动作造成的误报，'
+          + '分析端可按 low_speed 字段过滤。<br>'
+          + '若确实在骑行，说明定位速度不可靠，可改用手持/静止测试模式。');
   el.className = 'gatewarn on';
 }
 
@@ -1322,6 +1322,7 @@ function uiTick() {
   updateMetrics(now());
   drawWave();
   updateDropWarn();
+  updateGateWarn();
 }
 
 function updateDropWarn() {
@@ -1362,10 +1363,9 @@ function renderEvents(force) {
     const segTxt = e.segment_kind
       ? '<br>路段 #' + e.segment_id + ' · ' + e.segment_kind
       : '';
-    // 设计接缝只是候选，不作为结论显示，仅提示需视觉复核
-    const jointTxt = e.is_joint_candidate
-      ? '<br><span style="color:#5C7A99">疑似接缝候选 · 缝距 ' + e.joint_spacing_m
-        + ' m（待视觉复核）</span>'
+    // 速度不足时记录的事件：不再丢弃，而是就地标出来，让分析端决定怎么用
+    const lowTxt = e.low_speed
+      ? '<br><span style="color:#854F0B">⚠ 记录时速度 &lt; 8 km/h（可能含人体动作）</span>'
       : '';
     return '<div class="ev" data-id="' + e.id + '">'
       + '<div class="ev-top">' + thumb
@@ -1373,7 +1373,7 @@ function renderEvents(force) {
       + '<p class="tt" style="color:' + c + '">' + t + badge + '</p>'
       + '峰值 ' + e.peak + ' m/s²<br>时长 ' + e.duration + 'ms · ' + e.spd + 'km/h · ' + (e.t / 1000).toFixed(0) + 's'
       + '<br>画面 ' + (e.frames ? e.frames.length : 0) + ' 帧'
-      + segTxt + jointTxt
+      + segTxt + lowTxt
       + '</div></div>'
       + '<div class="labels">'
       + '<button class="lg-p" data-l="坑洼">坑洼</button>'
@@ -1425,7 +1425,10 @@ async function start() {
     inEvent: false, cur: null, lastEnd: 0, lastT: 0, motionCount: 0,
     g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0, thr: CFG.MIN_THRESHOLD,
     prevFix: null, t0: now(),
-    gateBlocked: 0, blockEp: false, spdMax: 0, spdUsable: false,
+    spdMax: 0, spdUsable: false,
+    lowSpeedEvents: 0,
+    // 模式变更时间线：记为「相对本次采集起点」的毫秒数，便于事后重建
+    modeChanges: [{ t_ms: 0, mode: S.mode === 'test' ? 'test' : 'ride', note: '采集开始' }],
     drops: { n: 0, max: 0, total: 0 }, uiDue: false, evDirty: false
   });
   $('gateWarn').className = 'gatewarn';
@@ -1485,7 +1488,7 @@ async function start() {
   $('s3').className = 'step done';
   $('modeHint').textContent = S.mode === 'test'
     ? '当前：手持 / 静止测试模式，速度门控已关闭。'
-    : '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+    : '当前：骑行 / 车载模式，低于 8 km/h 的事件照常记录但标 low_speed。';
   // 10Hz 界面刷新（传感器回调不再直接写 DOM）
   clearInterval(S.uiTimer);
   S.uiTimer = setInterval(uiTick, 100);
@@ -1532,17 +1535,17 @@ function download(name, blob) {
 function csvOf(rows) { return rows.join('\n'); }
 
 function rawCsv() {
-  const head = 't_ms,ax,ay,az,gx,gy,gz,lat,lon,speed_ms,hp,vz';
+  // moving 逐样本落盘：模式中途切换时，事后才能重建「当时哪些样本被认为在移动」
+  const head = 't_ms,ax,ay,az,gx,gy,gz,lat,lon,speed_ms,hp,vz,moving';
   const body = S.samples.map(s =>
-    [s.t, s.ax, s.ay, s.az, s.gx, s.gy, s.gz, s.lat, s.lon, s.spd, s.hp, s.vz].join(','));
+    [s.t, s.ax, s.ay, s.az, s.gx, s.gy, s.gz, s.lat, s.lon, s.spd, s.hp, s.vz,
+     s.moving == null ? '' : s.moving].join(','));
   return head + '\n' + csvOf(body);
 }
 
 /* 把路段归属写回事件对象，供 CSV / meta / 界面共用。
  * 每次导出前调用一次即可（路段是从事件派生的，不单独维护状态）。 */
 function stampSegments() {
-  // 顺序很重要：先做事件级设计接缝标记，路段聚合才能知道段内有多少个是接缝
-  markJoints();
   const segs = segments();
   S.events.forEach(e => { e.segment_id = null; e.segment_kind = null; });
   for (const s of segs) {
@@ -1558,7 +1561,7 @@ function stampSegments() {
 function eventCsv() {
   const segs = stampSegments();
   const head = 'id,t_ms,duration_ms,peak,rms,lat,lon,speed_kmh,auto_label,'
-             + 'final_label,frames,joint_candidate,joint_spacing_m,'
+             + 'final_label,frames,low_speed,'
              + 'segment_id,segment_kind,segment_event_count,counts_toward_rhi';
   const byId = {};
   for (const s of segs) byId[s.id] = s;
@@ -1566,8 +1569,7 @@ function eventCsv() {
     const s = e.segment_id != null ? byId[e.segment_id] : null;
     return [e.id, e.t, e.duration, e.peak, e.rms, e.lat, e.lon, e.spd, e.auto,
             e.manual || '', e.frames ? e.frames.length : 0,
-            e.is_joint_candidate ? 1 : 0,
-            e.joint_spacing_m != null ? e.joint_spacing_m : '',
+            e.low_speed ? 1 : 0,
             e.segment_id != null ? e.segment_id : '',
             e.segment_kind || '',
             s ? s.event_count : '',
@@ -1577,21 +1579,19 @@ function eventCsv() {
 }
 
 /* 路段表：连续颠簸的「面状要素」表述 —— 起止点 + 段长 + 强度。
- * 这是本项目对「连续颠簸如何上报」的正式答案。
- * 注意：设计接缝不在本表（它是点要素，走 events.csv 的 is_joint 字段）。 */
+ * 这是本项目对「连续颠簸如何上报」的正式答案。 */
 function segmentCsv() {
   const segs = stampSegments();
   const head = 'segment_id,kind,t_start_ms,t_end_ms,span_s,length_m,event_count,'
-             + 'joint_candidate_count,'
+             + 'low_speed_count,'
              + 'peak_max,peak_p90,peak_median,speed_kmh,n_sunken,n_bulge,'
-             + 'gap_mean_ms,gap_cv,joint_spacing_m,start_lat,start_lon,end_lat,end_lon,'
+             + 'gap_mean_ms,gap_cv,start_lat,start_lon,end_lat,end_lon,'
              + 'counts_toward_rhi';
   const body = segs.map(s => [
     s.id, s.kind, s.t_start, s.t_end, s.span_s, s.length_m, s.event_count,
-    s.joint_candidate_count,
+    s.low_speed_count,
     s.peak_max, s.peak_p90, s.peak_median, s.speed_kmh, s.n_sunken, s.n_bulge,
     s.gap_mean_ms != null ? s.gap_mean_ms : '', s.gap_cv != null ? s.gap_cv : '',
-    s.joint_spacing_m != null ? s.joint_spacing_m : '',
     s.lat != null ? s.lat : '', s.lon != null ? s.lon : '',
     s.lat_end != null ? s.lat_end : '', s.lon_end != null ? s.lon_end : '',
     s.counts_toward_rhi ? 1 : 0
@@ -1609,24 +1609,24 @@ function sweepCsv() {
 function metaObj() {
   stampSegments();   // 先写回路段归属，保证 segments 与 events 的 segment_id 一致
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
-  const nJoint = S.events.filter(e => e.is_joint_candidate).length;
+  const nLowSpeed = S.events.filter(e => e.low_speed).length;
   return {
-    version: '0.6', exported_at: new Date().toISOString(),
+    version: '0.7', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
+    // 速度不足 8 km/h 时记录的事件数。v0.7 起这类事件不再被丢弃，只打标记，
+    // 由分析端决定是否过滤。旧版只有 gate_blocked_segments 一个计数、无时间戳，
+    // 事后无法知道"哪里被删了"。
+    low_speed_event_count: nLowSpeed,
     sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
     segment_count: segments().length,
-    // 设计接缝是事件级点要素，与路段（面要素）分属不同粒度，故单独计数
-    joint_candidate_count: nJoint,
-    joint_note: '★ 这是【候选】不是【确认】。设计接缝（水泥路面横向缩缝等）不属于道路损坏，'
-      + '它是等间距离散点列（点要素），与坑洼/连续破损（面要素）性质不同，'
-      + '故在事件层标记、不参与路段聚合、不出现在 segments 表中。'
-      + '但实采包标定显示：纯振动信号无法可靠区分接缝与坑洼——'
-      + '相邻间隔换算缝距 74% 落在 3~6.5m 区间，看似特征显著，实为因果倒置：'
-      + '该区间宽度（3.5m）恰好覆盖不应期(1500ms)×车速(3.33m/s)≈5.0m 的节拍，'
-      + '即检测器自身节奏的产物，故无判别力（多判据扫描最高仅能挑出 47%）。'
-      + '最终判定必须依赖视觉：水泥缝在图像上是贯穿路面的直线，'
-      + '与坑洼的局部块状破损形态完全不同。',
+    retired_features: {
+      joint_candidate: '★ v0.7 已废弃。曾用「事件间隔 CV < 0.25 且换算缝距 3~6.5m」'
+        + '自动标注「疑似设计接缝候选」，实测 206 个事件里 158 个（77%）被标中。'
+        + '原因是事件间隔被不应期锁在约 1.7s，1.7s × 3.2m/s ≈ 5.44m 正好落进该区间 ——'
+        + '这个特征测的是检测器自己的节拍，不是路面结构，属循环论证。'
+        + '「设计接缝」现仅保留为人工标注选项（看着图点），不再由振动信号推断。'
+    },
     duration_s: +dur.toFixed(1),
     sample_rate_hz: dur > 0 ? +(S.samples.length / dur).toFixed(1) : null,
     camera_enabled: !!S.stream || !!S.events.some(e => e.frames && e.frames.length) || S.sweeps.length > 0,
@@ -1640,15 +1640,31 @@ function metaObj() {
         : '⚠ 未填写采集者。此字段不可再生，请勿在缺失状态下长期留存该数据包',
       route_note: S.route || null,
       mode: S.mode === 'test' ? 'handheld_test' : 'ride',
-      mode_note: S.mode === 'test'
-        ? '手持/静止测试：速度门控已关闭，速度读数无意义'
-        : '骑行/车载：速度门控 8 km/h 生效',
+      mode_note: (S.mode === 'test' ? '手持/静止测试：速度不参与判定，速度读数无意义。'
+                                    : '骑行/车载：低于 8 km/h 的事件照常记录，但会标 low_speed。')
+        + ' ⚠ 此处记录的是【导出那一刻】的模式；若中途切换过，请看 mode_changes。',
+      // ★ v0.7：模式变更时间线。旧版只留一个最终 mode，中途切换会让元数据撒谎
+      //   （实测一个包标注 handheld_test，但前 59s 事件为 0、gate 拦下 235 段、
+      //    速度恒为 0 —— 起始其实是 ride 模式，用户中途才切到 test，事后无法重建）
+      mode_changes: S.modeChanges.length
+        ? S.modeChanges
+        : [{ t_ms: 0, mode: S.mode === 'test' ? 'test' : 'ride', note: '全程未切换' }],
+      // 全程只用了一种模式才叫「一致」。注意 start() 一定会写入一条起始记录，
+      // 所以判据是「去重后只剩一种」，不能拿数组长度是否为 0 来判断。
+      mode_consistent: S.modeChanges.map(c => c.mode).filter((v, i, a) => a.indexOf(v) === i).length <= 1,
       speed_max_kmh: +(S.spdMax * 3.6).toFixed(1),
       speed_usable: S.spdUsable,
-      gate_blocked_segments: S.gateBlocked,
-      gate_blocked_note: S.gateBlocked > 0 && S.mode !== 'test'
-        ? '有 ' + S.gateBlocked + ' 段振动超过门限但被速度门控拦下，未记为事件'
+      // v0.7 起速度门控不再丢弃事件：低于 8 km/h 时照常记录并标 low_speed。
+      low_speed_event_count: nLowSpeed,
+      low_speed_note: nLowSpeed > 0
+        ? '有 ' + nLowSpeed + ' 个事件在速度不足 8 km/h 时记录。它们已写入包内（不再丢弃），'
+          + '但可能包含人体动作造成的误报，可按 events.csv 的 low_speed 列过滤。'
+          + '旧版这类信号被直接删除且不留时间戳，事后无法重建。'
         : '',
+      gate_note: '速度门控（8 km/h）仅用于打 low_speed 标记，不再丢弃事件。'
+        + '理由：门控本意是滤掉人体动作误报，但「是否移动」是二值开关，'
+        + '代价是低速通过坑洼（起步、上坡、减速、GPS 速度滞后）时真实事件被静默删掉。'
+        + '实测一趟 452s 骑行丢掉了 33.5s 的超门限信号（47 段），起步与停车两段完全空白。',
     },
     detection_criteria: {
       step1: '线性加速度 = 原始加速度 - 重力估计（各轴 tau=0.5s 低通）',
@@ -1657,9 +1673,31 @@ function metaObj() {
       step4: '平滑 smooth = ema(hp, tau=10ms)',
       step5: '噪声底 = quantile(|smooth|, 20%)，取最近 3 秒尾部窗口',
       step6: '门限 = max(1.2, 4 × 噪声底)',
-      step7: 'start: 速度 ≥ 8 km/h (测试模式跳过) 且 smooth > 门限 且 距上次结束 > ' + CFG.REFRACTORY_MS + ' ms',
+      step7: 'start: smooth > 门限 且 距上次事件结束 > 盲区对应的时间。'
+        + '盲区 = ' + CFG.BLIND_ZONE_M + ' m ÷ 当前车速，钳制在 '
+        + CFG.REFRACTORY_MIN_MS + '~' + CFG.REFRACTORY_MAX_MS + ' ms 之间；'
+        + '速度不可用时取 ' + CFG.REFRACTORY_FALLBACK_MS + ' ms。'
+        + '速度不再作为「开启条件」——低于 ' + (CFG.MIN_SPEED_MS * 3.6).toFixed(1)
+        + ' km/h 时照常记录，只把该事件标 low_speed。',
       step8: 'end: smooth < 门限 × 0.5 且持续 ≥ 60 ms，或事件已达 3000 ms',
       why_quantile: '用分位数而非滚动标准差：事件自身会抬高局部标准差、把自己屏蔽掉',
+      // ★ 不应期的取值推导。写进 meta 是为了让下游知道「这个数怎么来的、边界在哪」。
+      blind_zone_m: CFG.BLIND_ZONE_M,
+      blind_zone_why: '不应期只用两个「物理域」约束定，不含语义域：'
+        + '① 信号域——两次冲击的波形不能重叠，下限 = 单次冲击波形总时长；'
+        + '实测（不应期放到 0，纯靠信号回落自然分离）波形时长中位 102 ms / P90 223 ms / P99 595 ms，'
+        + '@11.6 km/h 换算为 0.33 / 0.72 / 1.92 m，取 P90 的 0.72 m 作为现实下限。'
+        + '② 车辆域——同一处障碍不能被前后轮各报一次，下限 = 轴距（共享单车 ≈ 1.05 m，小汽车 ≈ 2.6 m）。'
+        + '取 max(0.72, 1.05) 再留余量 → ' + CFG.BLIND_ZONE_M + ' m。'
+        + '⚠️ 车辆域这一项依赖车型，所以本值应当随车辆类型变 —— 这正是需要记录 mount / vehicle 的原因。',
+      blind_zone_wrong_basis: '✗ v0.7 初版曾取 2.5 m，理由是「两处独立病害若相距 2.5 m 以内，'
+        + '实际上属于同一片破损区，应由路段层描述」。该论证已作废：它拿面要素（路段）的语义'
+        + '去决定点要素（事件）的粒度，方向反了 —— 路段层是从事件层聚合出来的（segments() 消费 S.events），'
+        + '不能反过来裁剪事件层；且若真按「一片破损区只留一个点」来做，路段层反而没料可聚，'
+        + '因为路段的严重度恰恰来自它的点密度与峰值分布。',
+      blind_zone_caveat: '⚠️ 本参数是二道防线，不是主参数。实测 1σ 门限下，盲区从 0.6 m 到 2.5 m'
+        + '事件密度仍在 每公里 292~562 个，比真实病害密度高 1~2 个数量级 ——'
+        + '说明事件密度由门限决定。门限标定完成（改为 K×本底）后需按实测重新定本值。',
     },
     why_sweep_frames: '裂缝等病害不引起垂直颠簸，不会触发事件抓帧。' +
       '若只保留事件帧，视觉将永远无法贡献裂缝类病害，因此必须周期性扫描抓帧。',
@@ -1735,9 +1773,9 @@ function metaObj() {
         '根因是把「发生频率高」误当成「空间上连续」——水泥缝是每 4~5m 一道的等间距离散点列（点要素），' +
         '缝与缝之间是完好的混凝土板，不是连续破损区域（面要素）。聚成路段会造成：' +
         '① 完好水泥路被误报为连续破损路段（缝间隔远小于聚类间隙，必然并入同段）；' +
-        '② 丢失缝距周期性这一本应可用的判别特征。故改为事件级候选标记。' +
-        '但后续标定进一步发现该特征本身也立不住（见 meta.joint_note），' +
-        '接缝的最终判定留给视觉环节。',
+        '② 丢失缝距周期性这一本应可用的判别特征。故一度改为事件级候选标记。' +
+        '但 v0.7 的标定进一步证明该特征本身也立不住（详见 retired_features.joint_candidate）——' +
+        '它测的是检测器自己不应期的节拍。接缝的最终判定只能交给视觉。',
       why_layered: '实测某段 70.8s 内报了 42 个事件，密度 136 个/km（每 7 米一个病害），物理上不成立；' +
         '聚成路段后 9.9 段/km 才是合理量级'
     },
@@ -1746,6 +1784,8 @@ function metaObj() {
       id: e.id, t_ms: e.t, duration_ms: e.duration, peak: e.peak, rms: e.rms,
       lat: e.lat, lon: e.lon, speed_kmh: e.spd,
       auto_label: e.auto, final_label: e.manual || e.auto, manual: !!e.manual,
+      // 记录时速度不足 8 km/h。此类事件 v0.7 起不再丢弃，只打标记交下游判断
+      low_speed: !!e.low_speed,
       segment_id: e.segment_id != null ? e.segment_id : null,
       segment_kind: e.segment_kind || null,
       frames: (e.frames || []).map(f => ({
@@ -1852,9 +1892,19 @@ function exportZip() {
 document.querySelectorAll('input[name=mode]').forEach(r => {
   r.onchange = () => {
     S.mode = r.value;
+    // ★ 中途切模式要留痕：旧版只保留导出那一刻的 mode，于是 tang 那个包
+    //   标成 handheld_test，但前 59 s 事件为 0、速度恒为 0 —— 显然起始是 ride。
+    //   元数据撒谎后无法重建，所以现在把每次切换连同「距采集开始的毫秒数」一起记下。
+    if (S.recording) {
+      S.modeChanges.push({
+        t_ms: Math.round(now() - S.t0),
+        mode: r.value,
+        note: '采集途中切换'
+      });
+    }
     $('modeHint').textContent = S.mode === 'test'
-      ? '当前：手持 / 静止测试模式，速度门控已关闭。'
-      : '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+      ? '当前：手持 / 静止测试模式，速度门控已关闭（事件不再被丢弃，低速也只做标记）。'
+      : '当前：骑行 / 车载模式，速度门控生效：低于 8 km/h 的事件照常记录，但会标 low_speed。';
     updateGateWarn();
   };
 });
@@ -1868,7 +1918,8 @@ $('btnEv').onclick = () => download('roadcheck_events_' + stamp() + '.csv', new 
 $('btnBack').onclick = () => $('labelCard').scrollIntoView({ behavior: 'smooth' });
 $('btnReset').onclick = () => {
   S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
-  S.gateBlocked = 0; S.blockEp = false; S.spdMax = 0; S.spdUsable = false;
+  S.spdMax = 0; S.spdUsable = false; S.lowSpeedEvents = 0;
+  S.modeChanges = [];
   S.frameQ = { n: 0, suspect: 0, last: null };
   S.drops = { n: 0, max: 0, total: 0 };
   $('exportCard').classList.add('hidden');
@@ -1886,7 +1937,7 @@ $('btnReset').onclick = () => {
 
 S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
 motionState = needMotionPermission() ? null : 'n/a';
-$('modeHint').textContent = '当前：骑行 / 车载模式，速度门控 8 km/h 生效。';
+$('modeHint').textContent = '当前：骑行 / 车载模式，低于 8 km/h 的事件照常记录但标 low_speed。';
 bindCollectorFields();
 
 /* ★ 采集中禁掉滚动手势（iOS 各版本对 touch-action 的支持不一致，这里做双保险）。
