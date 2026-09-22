@@ -15,7 +15,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.svg">
-<title>路面体检 · 采集端 v0.7</title>
+<title>路面体检 · 采集端 v0.8</title>
 <style>
   :root{
     --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
@@ -140,7 +140,7 @@
 <body>
 <div class="wrap">
 
-  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.7</span></h1>
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.8</span></h1>
   <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
 
   <div class="err" id="err"></div>
@@ -257,7 +257,60 @@ const $ = id => document.getElementById(id);
 
 const CFG = {
   TAU_GRAVITY: 0.5, TAU_SMOOTH: 0.010,
-  NOISE_WIN_S: 3.0, NOISE_Q: 0.20, NOISE_K: 4.0, MIN_THRESHOLD: 1.2,
+
+  /* ═══════════ 门限：v0.8 已修好 ═══════════
+   * 公式：threshold = max(MIN_THRESHOLD, NOISE_K × 最近 1 秒 |smooth| 的 RMS)
+   *
+   * ── 旧公式错在哪（务必先读，避免有人改回去）
+   *   旧式：max(1.2, 4 × 最近 3 秒 |smooth| 的 20% 分位)
+   *   数学事实：|N(0,1)| 的 20% 分位 = 0.2533σ，故 4 × 0.2533σ = 1.013σ
+   *   —— 与 σ 无关，**恒等于 1 个标准差**。1σ 会打在 23~28% 的样本上，
+   *   那不是「事件门限」。后果：事件连续触发，只能再靠不应期压制，
+   *   于是不应期变成「事件节奏发生器」，人造出周期性（见 CFG.BLIND_ZONE_M 注释）。
+   *
+   * ── 为什么旧公式以前没暴露
+   *   早先的合成验证里本底 σ≈0.2，自适应项算出来 0.8 被 MIN_THRESHOLD=1.2 挡住，
+   *   实际生效的是 1.2 = 6σ（好门限）。只有本底粗糙到 σ≳1.2 时自适应项才接管，
+   *   然后一接管就退化到 1σ。实采路面本底 1.5 左右，正好中招。
+   *
+   * ── 为什么改成 RMS 就对了
+   *   RMS ≈ σ，且**不受「事件是否稀疏」影响**。而分位数会被事件自身的幅度拉高
+   *   （自适应门限的经典自遮蔽问题）。1 秒窗在「跟得上本底变化」与
+   *   「不被单个事件带偏」之间取平衡。
+   *
+   * ── K = 4.0 的标定依据（三条真值标注路线）
+   *   2130 平整水泥路 639m / 2131 平整砖石路 113m / 2137 粗糙水泥路 159m
+   *   （2137 用户标注：约 26 个特征 = 20+ 水泥缝 + 5~6 缺陷）
+   *
+   *     K      2130 平整水泥   2131 平整砖石   2137 粗糙（真值 26）
+   *     3.0    122 个/km      133 个/km      36（超真值 38%）
+   *     ★4.0    56 个/km       44 个/km      22（召回 85%）  ← 采用
+   *     4.5     41 个/km       18 个/km      14（召回 54%）
+   *     5.0     28 个/km        0            10（召回 38%）
+   *     6.0      8 个/km        0             1（召回  4%）
+   *
+   *   对照：修之前的「1σ」下三包密度是 491 / 513 / 495 个/km
+   *   —— **三种完全不同的路面，密度几乎相同**，这是「门限错了」的决定性证据。
+   *   改成 K=4 后粗糙包（138 个/km）成为平整包（56 / 44）的 2.5~3 倍，方向终于对了。
+   *
+   * ── 取 4.0 而不是 4.5 的理由（项目原则：取舍不对称）
+   *   原始波形永远在 samples.csv 里 → 事件列表可离线用任意 K 重算；
+   *   但**事件触发抓的画面只在当时抓**，没触发就永久没有（只剩 2 秒一张的扫描帧）。
+   *   ⇒ 门限偏高 = 不可恢复的数据损失；门限偏低 = 只是多占空间，可事后过滤。
+   *   ⇒ 采集端宁可多报，筛选放到分析端。
+   *
+   * ── ⚠️ 已知残留问题：跨车偏差
+   *   同路段两辆车对照实测：信号级相关 r=0.325（10m 窗，p=0.002）→ 平台有效；
+   *   但**事件级可复现率只有 33%，跨车增益差约 3 倍**（幅度比中位 0.33）。
+   *   这一项**不是门限能解决的**：非机动车轮窄，两车横向轮迹不同，窄裂缝
+   *   可能一辆压到另一辆没压到 —— 漏检是「单侧随机」的。
+   *   ⇒ 聚合时应取**多次经过的并集/最大值**，而不是平均值。
+   *   ⇒ 单趟采集端不做这个判断（信息不足），保持偏低门限保画面。
+   */
+  NOISE_K: 4.0,
+  MIN_THRESHOLD: 1.2,     // 绝对下限：低本底时它本身就是一个有效门限
+  RMS_WIN_S: 1.0,         // 滚动 RMS 窗口（秒）
+  RMS_FLOOR: 0.02,        // 防止 RMS 为 0 时门限塌成 0
   RELEASE_RATIO: 0.5,
   /* ★ 不应期 = 「多少米内只报一次」，按里程定义，再按当前车速换算成毫秒。
    *
@@ -349,7 +402,13 @@ const S = {
   // 由信号处理段逐帧写入，detect() 在事件窗口内累积其上下极值以判定凸起/凹陷。
   lastVz: 0,
   gps: { lat: null, lon: null, spd: null, acc: null }, prevFix: null,
-  win: [], motionCount: 0, t0: 0, thr: CFG.MIN_THRESHOLD,
+  // 门限用的 1 秒滚动 RMS（用增量维护 sum of squares，避免每帧重算）
+  rmsWin: [], rmsSum: 0, rmsN: 0, rms: 0,
+  // 门限统计：绝对下限生效 vs 自适应项生效的帧数。
+  //   若 floor_active_ratio 接近 1，说明全程本底很低、门限退化为固定 1.2，
+  //   此时自适应项其实没起作用（下游可据此判断这份数据的门限是否真在跟本底走）。
+  thrFloorN: 0, thrAdaptN: 0,
+  motionCount: 0, t0: 0, thr: CFG.MIN_THRESHOLD, thrFloored: true,
   wakeLock: null, gpsWatch: null,
   stream: null, frameTimer: null, sweepTimer: null, ring: [], sweeps: [],
   trial: null,
@@ -1028,14 +1087,25 @@ function detect(t, v, spd, moving) {
   // ★ v = smooth，是「带符号」的交流分量（有正有负）。
   //   幅值判定一律用 a = |v|；符号另有用途（见 vz 的凸起/凹陷判定）。
   const a = Math.abs(v);
-  S.win.push({ t, v: a });
-  while (S.win.length && t - S.win[0].t > CFG.NOISE_WIN_S * 1000) S.win.shift();
 
-  const abs = S.win.map(w => w.v).sort((x, y) => x - y);
-  const q = abs.length ? abs[Math.floor((abs.length - 1) * CFG.NOISE_Q)] : 0.02;
-  const floor = Math.max(q, 0.02);
-  const thr = Math.max(CFG.MIN_THRESHOLD, CFG.NOISE_K * floor);
+  // ── 门限：max(MIN_THRESHOLD, K × 最近 1 秒 |smooth| 的 RMS)
+  //   用 RMS 而不是分位数：RMS ≈ σ，且不受「事件是否稀疏」影响；
+  //   分位数会被事件自身幅度拉高（自适应门限的自遮蔽问题）。
+  //   旧公式 4 × 20%分位 恒等于 1.01σ —— 详细推导见 CFG 顶部注释。
+  S.rmsWin.push({ t, v2: v * v });
+  S.rmsSum += v * v; S.rmsN++;
+  while (S.rmsWin.length && t - S.rmsWin[0].t > CFG.RMS_WIN_S * 1000) {
+    const o = S.rmsWin.shift();
+    S.rmsSum -= o.v2; S.rmsN--;
+  }
+  const rms = S.rmsN ? Math.sqrt(S.rmsSum / S.rmsN) : 0;
+  const t0 = CFG.NOISE_K * Math.max(rms, CFG.RMS_FLOOR);
+  const thr = Math.max(CFG.MIN_THRESHOLD, t0);
   S.thr = thr;
+  S.rms = rms;
+  S.thrFloored = t0 < CFG.MIN_THRESHOLD;   // 本次是绝对下限生效还是自适应生效
+  if (S.thrFloored) S.thrFloorN++; else S.thrAdaptN++;
+
 
   if (!S.inEvent) {
     if (a > thr) {
@@ -1421,9 +1491,11 @@ async function start() {
   S.mode = (document.querySelector('input[name=mode]:checked') || {}).value || 'ride';
 
   Object.assign(S, {
-    recording: true, samples: [], events: [], win: [], ring: [], sweeps: [],
+    recording: true, samples: [], events: [], ring: [], sweeps: [],
+    rmsWin: [], rmsSum: 0, rmsN: 0, rms: 0, thrFloorN: 0, thrAdaptN: 0,
     inEvent: false, cur: null, lastEnd: 0, lastT: 0, motionCount: 0,
-    g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0, thr: CFG.MIN_THRESHOLD,
+    g: { x: 0, y: 0, z: 0 }, dc: 0, smooth: 0,
+    thr: CFG.MIN_THRESHOLD, thrFloored: true,
     prevFix: null, t0: now(),
     spdMax: 0, spdUsable: false,
     lowSpeedEvents: 0,
@@ -1611,7 +1683,7 @@ function metaObj() {
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
   const nLowSpeed = S.events.filter(e => e.low_speed).length;
   return {
-    version: '0.7', exported_at: new Date().toISOString(),
+    version: '0.8', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
     // 速度不足 8 km/h 时记录的事件数。v0.7 起这类事件不再被丢弃，只打标记，
@@ -1621,11 +1693,22 @@ function metaObj() {
     sweep_count: S.sweeps.length, sweep_interval_s: CFG.SWEEP_MS / 1000,
     segment_count: segments().length,
     retired_features: {
-      joint_candidate: '★ v0.7 已废弃。曾用「事件间隔 CV < 0.25 且换算缝距 3~6.5m」'
-        + '自动标注「疑似设计接缝候选」，实测 206 个事件里 158 个（77%）被标中。'
-        + '原因是事件间隔被不应期锁在约 1.7s，1.7s × 3.2m/s ≈ 5.44m 正好落进该区间 ——'
-        + '这个特征测的是检测器自己的节拍，不是路面结构，属循环论证。'
-        + '「设计接缝」现仅保留为人工标注选项（看着图点），不再由振动信号推断。'
+      joint_candidate: '★ v0.7 已废弃（自动标记逻辑已删），但**「该特征不存在」这个结论已被推翻**。'
+        + '当时的观察：206 个事件里 158 个（77%）被标为「疑似设计接缝候选」，'
+        + '间隔 CV < 0.25 且换算缝距落在 3~6.5m。'
+        + '当时的结论是「测的是检测器自己的不应期节拍，属循环论证」。'
+        + '★ 这个结论错在哪：它是在门限坏掉（≡1σ）的数据上做的 —— 那时事件间隔被不应期锁死，'
+        + '所有间距分析量到的都是不应期本身，属"用被污染的尺子量东西"。'
+        + '拿到真值标注数据后重做（门限改为 4 × 1s 滚动 RMS）：'
+        + '真值有 20+ 水泥缝的包，相邻间距落在 3.0~6.5m 的占 48%（10/21），'
+        + '零假设检验 p = 0.0233 显著；而两条被标注为「平整」的路，'
+        + '同一统计量分别为 11%（p=0.81）和 0%（p=1.00），均不显著。'
+        + '⇒ **水泥缝的周期性是真实存在的，只是必须先把门限修对才看得见。**'
+        + '⇒ 通用教训：**别用坏参数下采的数据去否决一个特征。**'
+        + '顺序必须是「先修门限，再谈特征」。',
+      joint_current_status: '「设计接缝」现仅保留为人工标注选项（缝在图像上是直线，'
+        + '振动给不了这个信息）。振动侧暂时不再自动推断接缝 —— '
+        + '不是因为它不可判别，而是因为接缝的判别需要新的判据设计（待门限 K 值确定后再做）。'
     },
     duration_s: +dur.toFixed(1),
     sample_rate_hz: dur > 0 ? +(S.samples.length / dur).toFixed(1) : null,
@@ -1671,8 +1754,9 @@ function metaObj() {
       step2: '幅值 mag = |线性加速度|',
       step3: '去直流 hp = mag - ema(mag, tau=0.5s)',
       step4: '平滑 smooth = ema(hp, tau=10ms)',
-      step5: '噪声底 = quantile(|smooth|, 20%)，取最近 3 秒尾部窗口',
-      step6: '门限 = max(1.2, 4 × 噪声底)',
+      step5: '本底 = 最近 ' + CFG.RMS_WIN_S + ' 秒 |smooth| 的 RMS（增量维护平方和）',
+      step6: '门限 = max(' + CFG.MIN_THRESHOLD + ', ' + CFG.NOISE_K + ' × 本底)'
+        + '（本底下限 ' + CFG.RMS_FLOOR + '，防止为 0 时门限塌陷）',
       step7: 'start: smooth > 门限 且 距上次事件结束 > 盲区对应的时间。'
         + '盲区 = ' + CFG.BLIND_ZONE_M + ' m ÷ 当前车速，钳制在 '
         + CFG.REFRACTORY_MIN_MS + '~' + CFG.REFRACTORY_MAX_MS + ' ms 之间；'
@@ -1680,7 +1764,47 @@ function metaObj() {
         + '速度不再作为「开启条件」——低于 ' + (CFG.MIN_SPEED_MS * 3.6).toFixed(1)
         + ' km/h 时照常记录，只把该事件标 low_speed。',
       step8: 'end: smooth < 门限 × 0.5 且持续 ≥ 60 ms，或事件已达 3000 ms',
-      why_quantile: '用分位数而非滚动标准差：事件自身会抬高局部标准差、把自己屏蔽掉',
+      why_rms: '用 RMS 而不是分位数：RMS ≈ σ，且不受「事件是否稀疏」影响；'
+        + '分位数会被事件自身幅度拉高（自适应门限的自遮蔽问题）。'
+        + '1 秒窗在「跟得上本底变化」与「不被单个事件带偏」之间取平衡。',
+      // ── 门限修正记录（v0.8）。历史保留在这里，避免以后有人改回旧公式。
+      threshold_fixed_in: 'v0.8',
+      threshold_old_bug: '✗ 旧公式 max(1.2, 4 × 最近3秒 |smooth| 的 20% 分位) 是错的。'
+        + '数学事实：|N(0,1)| 的 20% 分位 = 0.2533σ，故 4 × 20%分位 ≡ 1.013σ ——'
+        + '与 σ 无关，**恒等于 1 个标准差**，会打在 23~28% 的样本上，'
+        + '不是「事件门限」。后果：事件连续触发 → 只能靠不应期压制 →'
+        + '不应期变成「事件节奏发生器」，人造出周期性。',
+      threshold_old_bug_why_hidden: '旧公式以前没暴露，是因为早先合成验证里本底 σ≈0.2，'
+        + '自适应项算出的 0.8 被 MIN_THRESHOLD=1.2 挡住，实际生效的是 1.2 = 6σ（好门限）。'
+        + '只有本底粗糙到 σ≳1.2 时自适应项才接管，而一接管就退化到 1σ。',
+      threshold_evidence: '用三条路面状况差异极大的真实路线验证：'
+        + '修正前，平整水泥路 491 个/km、平整砖石路 513 个/km、'
+        + '粗糙水泥路（含 20+ 水泥缝 + 5~6 缺陷）495 个/km ——'
+        + '**三种完全不同的路面，事件密度几乎相同，密度与路面无关**，'
+        + '说明检测器测的是自己而不是路面。这是「门限错了」的决定性证据。',
+      threshold_calibration: {
+        K: CFG.NOISE_K,
+        floor: CFG.MIN_THRESHOLD,
+        window_s: CFG.RMS_WIN_S,
+        truth_package: '2137 粗糙水泥路 159 m，用户标注约 26 个特征（20+ 水泥缝 + 5~6 缺陷）',
+        sweep: {
+          'K=3.0': { '2130 平整水泥 639m': 78, '2131 平整砖石 113m': 15, '2137 粗糙 159m': 36 },
+          'K=4.0': { '2130 平整水泥 639m': 36, '2131 平整砖石 113m': 5, '2137 粗糙 159m': 22 },
+          'K=4.5': { '2130 平整水泥 639m': 26, '2131 平整砖石 113m': 2, '2137 粗糙 159m': 14 },
+          'K=5.0': { '2130 平整水泥 639m': 18, '2131 平整砖石 113m': 0, '2137 粗糙 159m': 10 },
+          'K=6.0': { '2130 平整水泥 639m': 5, '2131 平整砖石 113m': 0, '2137 粗糙 159m': 1 }
+        },
+        chosen: 'K=' + CFG.NOISE_K + '：真值包召回 22/26 = 85%；'
+          + '粗糙包密度（138 个/km）成为平整包（56 / 44 个/km）的 2.5~3 倍。'
+          + '取偏低值（而非 4.5）的理由是项目原则：原始波形永远在（可离线重算），'
+          + '但事件触发抓的画面只在当时抓 → 门限偏高是不可恢复的损失。'
+      },
+      threshold_known_limit: '⚠ 跨车偏差不是门限能解决的。同路段两辆车对照实测：'
+        + '信号级相关 r=0.325（10m 窗，p=0.0020，平台有效）；'
+        + '但事件级可复现率只有 33%，跨车增益差约 3 倍（幅度比中位 0.33）。'
+        + '原因之一是非机动车轮窄，两车横向轮迹不同，窄裂缝可能一辆压到另一辆没压到。'
+        + '⇒ 漏检是「单侧随机」的，聚合时应取**多次经过的并集/最大值**，而不是平均值。'
+        + '⇒ 单趟采集端信息不足，不做此判断，只保持偏低门限保住画面。',
       // ★ 不应期的取值推导。写进 meta 是为了让下游知道「这个数怎么来的、边界在哪」。
       blind_zone_m: CFG.BLIND_ZONE_M,
       blind_zone_why: '不应期只用两个「物理域」约束定，不含语义域：'
@@ -1695,9 +1819,9 @@ function metaObj() {
         + '去决定点要素（事件）的粒度，方向反了 —— 路段层是从事件层聚合出来的（segments() 消费 S.events），'
         + '不能反过来裁剪事件层；且若真按「一片破损区只留一个点」来做，路段层反而没料可聚，'
         + '因为路段的严重度恰恰来自它的点密度与峰值分布。',
-      blind_zone_caveat: '⚠️ 本参数是二道防线，不是主参数。实测 1σ 门限下，盲区从 0.6 m 到 2.5 m'
-        + '事件密度仍在 每公里 292~562 个，比真实病害密度高 1~2 个数量级 ——'
-        + '说明事件密度由门限决定。门限标定完成（改为 K×本底）后需按实测重新定本值。',
+      blind_zone_caveat: '★ v0.8 更新：门限已修正，不应期回到「二道防线」的正常角色。'
+        + '按 K=' + CFG.NOISE_K + ' 实测，' + CFG.BLIND_ZONE_M + ' m 盲区下事件密度已回落到合理量级'
+        + '（真值包 138 个/km，含水泥缝）。后续若发现事件仍偏密，优先怀疑门限而不是继续调盲区。',
     },
     why_sweep_frames: '裂缝等病害不引起垂直颠簸，不会触发事件抓帧。' +
       '若只保留事件帧，视觉将永远无法贡献裂缝类病害，因此必须周期性扫描抓帧。',
@@ -1749,11 +1873,24 @@ function metaObj() {
     },
     method: {
       gravity_tau_s: CFG.TAU_GRAVITY, smooth_tau_s: CFG.TAU_SMOOTH,
-      noise_floor: 'quantile(|x|, ' + (CFG.NOISE_Q * 100) + '%) over ' + CFG.NOISE_WIN_S + 's centered window',
+      noise_floor: '最近 ' + CFG.RMS_WIN_S + ' 秒 |smooth| 的 RMS（增量维护平方和）',
       peak_rule: 'height = max(' + CFG.MIN_THRESHOLD + ', ' + CFG.NOISE_K + ' x noise_floor)',
       speed_gate_kmh: +(CFG.MIN_SPEED_MS * 3.6).toFixed(1),
       vertical_component: '线性加速度在重力方向上的投影，保留正负号',
       note: '浏览器 devicemotion 通常约 60Hz；请按实际时间戳重采样至 100Hz 后分析'
+    },
+    // 门限实际生效情况：本底低到让绝对下限接管时，自适应项其实没起作用。
+    // 下游可据此判断这份数据的门限是否真的在跟本底走（比例接近 1 就说明没有）。
+    threshold_stats: {
+      frames_total: S.thrFloorN + S.thrAdaptN,
+      frames_floor_active: S.thrFloorN,
+      frames_adaptive_active: S.thrAdaptN,
+      floor_active_ratio: (S.thrFloorN + S.thrAdaptN)
+        ? +(S.thrFloorN / (S.thrFloorN + S.thrAdaptN)).toFixed(3) : null,
+      last_threshold: S.thr != null ? +S.thr.toFixed(2) : null,
+      last_rms: +S.rms.toFixed(3),
+      note: 'floor_active_ratio 接近 1 = 全程本底很低，门限退化为固定 '
+        + CFG.MIN_THRESHOLD + '（此时自适应项没起作用，属正常但需知晓）'
     },
     // ★ 振动路段：把连续颠簸按时间邻近聚成段，解决「一连串孤立事件」的表述问题。
     //   连续颠簸应按**面状要素**（起止点 + 段长 + 强度）上报，而非 N 个点要素。
@@ -1920,6 +2057,8 @@ $('btnReset').onclick = () => {
   S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
   S.spdMax = 0; S.spdUsable = false; S.lowSpeedEvents = 0;
   S.modeChanges = [];
+  S.rmsWin = []; S.rmsSum = 0; S.rmsN = 0; S.rms = 0;
+  S.thrFloorN = 0; S.thrAdaptN = 0;
   S.frameQ = { n: 0, suspect: 0, last: null };
   S.drops = { n: 0, max: 0, total: 0 };
   $('exportCard').classList.add('hidden');
