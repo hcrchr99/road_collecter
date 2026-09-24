@@ -15,7 +15,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.svg">
-<title>路面体检 · 采集端 v0.8</title>
+<title>路面体检 · 采集端 v0.9</title>
 <style>
   :root{
     --bg:#F7F7F5; --card:#FFF; --line:#E3E2DD; --text:#1F1F1D; --muted:#6B6A65; --faint:#9A9992;
@@ -77,15 +77,7 @@
   .stop{background:var(--red);border-color:var(--red);color:#fff;}
   .sm{font-size:13px;padding:9px 10px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
-  /* 6 个标签：3 列 × 2 行，比硬塞 5 列更好点按 */
-  .labels{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;}
-  .labels button{padding:9px 2px;font-size:12px;}
-  .lg-p{background:var(--red-bg);border-color:#F0C9C9;color:var(--red);}
-  .lg-b{background:var(--amber-bg);border-color:#EFD9AE;color:var(--amber);}
-  .lg-m{background:var(--blue-bg);border-color:#C3DDF5;color:var(--blue);}
-  .lg-r{background:#F1EFE8;border-color:var(--line);color:var(--muted);}
-  .lg-j{background:#EAF0F6;border-color:#C6D5E3;color:#5C7A99;}
-  .lg-n{background:var(--green-bg);border-color:#CFE2B4;color:var(--green);}
+  .ev-toggle{margin-top:10px;}
   .ev{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px;}
   .ev-top{display:flex;gap:10px;align-items:flex-start;}
   .ev img{width:88px;height:62px;object-fit:cover;border-radius:6px;background:#F1EFE8;flex:none;}
@@ -140,8 +132,8 @@
 <body>
 <div class="wrap">
 
-  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.8</span></h1>
-  <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 事后回看标定</p>
+  <h1>路面体检 · 采集端 <span style="font-weight:400;color:var(--faint);font-size:13px;">v0.9</span></h1>
+  <p class="sub">IMU + 视觉双模态采集 · 事件自动抓帧 · 标注见 tools/label_tool.html</p>
 
   <div class="err" id="err"></div>
 
@@ -226,9 +218,12 @@
   </div>
 
   <div class="card hidden" id="labelCard">
-    <h2><span class="step" id="s4">4</span>事后回看标定</h2>
-    <p class="sub" style="margin:0 0 8px;">每条事件都带画面缩略图，看着图点标签就行——比骑行途中盲点准得多。<b>点「误报」的事件会作为负样本保留</b>，这对降低误报最有价值。</p>
-    <div id="evList"><p class="empty">尚未检出事件</p></div>
+    <h2><span class="step" id="s4">4</span>事件回看</h2>
+    <p class="sub" style="margin:0 0 8px;">仅供快速核对采集质量，采集端不再承担标注——
+      人工真值请用 <b>tools/label_tool.html</b>（有键盘快捷键、进度保存、真值 schema v1.1，
+      比在手机上点按钮高效得多）。列表默认收起，方便直接到导出区。</p>
+    <button class="sm ev-toggle" id="btnEvToggle">展开事件列表</button>
+    <div id="evList" class="hidden"><p class="empty">尚未检出事件</p></div>
   </div>
 
   <div class="card hidden" id="exportCard">
@@ -437,11 +432,6 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 function speed() { const s = S.gps.spd; return (s === null || isNaN(s)) ? 0 : s; }
-function flash(msg) {
-  const f = $('flash'); f.textContent = msg; f.classList.add('on');
-  clearTimeout(f._t); f._t = setTimeout(() => f.classList.remove('on'), 900);
-  if (navigator.vibrate) navigator.vibrate(25);
-}
 function showErr(title, detail) {
   const e = $('err');
   e.innerHTML = '<b>' + title + '</b>' + (detail || '');
@@ -1145,7 +1135,6 @@ function detect(t, v, spd, moving) {
         lat: S.gps.lat, lon: S.gps.lon, spd: +(spd * 3.6).toFixed(1),
         auto: autoType(c.peak, dur, bump, bumpMargin), bump: bump,
         low_speed: !!c.lowSpeed,
-        manual: null,
         frames: framesForEvent(c.t0 - S.t0)
       };
       S.events.push(e);
@@ -1292,8 +1281,9 @@ function segments() {
  *   把检测器的参数映射成"物理特征"再当作判别依据，会得到看起来很有说服力、
  *   实际上完全循环论证的结果。
  *
- * 现在「设计接缝」只保留为**人工标注选项**（看着图点一下），
- * 不再由振动信号自动推断 —— 缝在图像上是贯穿路面的直线，这是振动给不了的信息。
+ * 「设计接缝」的人工判定入口：v0.9 起在 tools/label_tool.html（真值词表以
+ * labels/schema.md v1.1 为唯一真源）。不再由振动信号自动推断 ——
+ * 缝在图像上是贯穿路面的直线，这是振动给不了的信息。
  */
 
 /* 路段类型配色（与事件配色体系区分开：路段是面要素，用较柔和的色） */
@@ -1412,24 +1402,35 @@ function updateDropWarn() {
   el.className = 'gatewarn on';
 }
 
-/* ============================ 标定与列表 ============================ */
+/* ============================ 事件回看列表 ============================ */
+/* v0.9：采集端不再承担人工标注。理由：
+ *   ① 职责分离 —— 标注是「分析」不是「采集」，真值判定需要看画面细节、
+ *      查严重度标准、写备注，手机上点 6 个小按钮做不到这些；
+ *   ② 词表权威 —— 真值取值域以 labels/schema.md 为唯一真源（v1.1 共 10 类），
+ *      采集端另养一份词表必然漂移（历史教训：schema 有「遮挡/无法判定」，
+ *      采集端是「误报」，两边对不齐）；
+ *   ③ 效率 —— 标注工具有键盘快捷键、进度自动保存、按标注者分文件导出。
+ * 事件列表保留但默认收起：采集结束时用户要的是「导出」，不是翻 388 条缩略图。 */
+let evListOpen = false;
 function renderEvents(force) {
   const box = $('evList');
+  const btn = $('btnEvToggle');
+  if (btn) btn.textContent = evListOpen
+    ? '收起事件列表（' + S.events.length + ' 条）'
+    : '展开事件列表（' + S.events.length + ' 条）';
   // ★ 采集中事件列表是隐藏的，重建它纯属浪费：innerHTML 里塞的是 base64 图片，
   //   每出一个事件就要把整列表重新解码一遍。改为标记为脏，等 stop() 时一次性渲染。
   if (!force && S.recording && $('labelCard').classList.contains('hidden')) {
     S.evDirty = true; return;
   }
+  if (!evListOpen) return;
   if (!S.events.length) { box.innerHTML = '<p class="empty">尚未检出事件</p>'; return; }
   box.innerHTML = S.events.slice().reverse().map(e => {
-    const t = e.manual || e.auto;
+    const t = e.auto;
     const c = COLOR[t] || '#888780';
     const thumb = e.frames && e.frames.length
       ? '<img src="' + e.frames[Math.floor(e.frames.length / 2)].url + '" alt="事件画面">'
       : '<img alt="无画面">';
-    const badge = e.manual
-      ? '<span class="badge g">已标定</span>'
-      : '<span class="badge">自动判定，待确认</span>';
     const segTxt = e.segment_kind
       ? '<br>路段 #' + e.segment_id + ' · ' + e.segment_kind
       : '';
@@ -1440,32 +1441,12 @@ function renderEvents(force) {
     return '<div class="ev" data-id="' + e.id + '">'
       + '<div class="ev-top">' + thumb
       + '<div class="info">'
-      + '<p class="tt" style="color:' + c + '">' + t + badge + '</p>'
+      + '<p class="tt" style="color:' + c + '">' + t + '</p>'
       + '峰值 ' + e.peak + ' m/s²<br>时长 ' + e.duration + 'ms · ' + e.spd + 'km/h · ' + (e.t / 1000).toFixed(0) + 's'
       + '<br>画面 ' + (e.frames ? e.frames.length : 0) + ' 帧'
       + segTxt + lowTxt
-      + '</div></div>'
-      + '<div class="labels">'
-      + '<button class="lg-p" data-l="坑洼">坑洼</button>'
-      + '<button class="lg-b" data-l="减速带">减速带</button>'
-      + '<button class="lg-m" data-l="井盖">井盖</button>'
-      + '<button class="lg-r" data-l="粗糙路面">粗糙</button>'
-      + '<button class="lg-j" data-l="设计接缝">设计接缝</button>'
-      + '<button class="lg-n" data-l="误报">误报</button>'
-      + '</div></div>';
+      + '</div></div></div>';
   }).join('');
-
-  box.querySelectorAll('.ev').forEach(el => {
-    el.querySelectorAll('button[data-l]').forEach(b => {
-      b.onclick = () => {
-        const e = S.events[+el.dataset.id];
-        if (!e) return;
-        e.manual = b.dataset.l;
-        flash('已标为「' + b.dataset.l + '」');
-        renderEvents(true);
-      };
-    });
-  });
 }
 
 /* ============================ 采集控制 ============================ */
@@ -1632,15 +1613,17 @@ function stampSegments() {
 
 function eventCsv() {
   const segs = stampSegments();
+  // v0.9：manual 标注移除，final_label = auto_label（人工真值由标注工具产出，
+  // 经 tools/merge_labels.py 合并，不回写本表 —— 保留列名以兼容下游脚本）。
   const head = 'id,t_ms,duration_ms,peak,rms,lat,lon,speed_kmh,auto_label,'
              + 'final_label,frames,low_speed,'
              + 'segment_id,segment_kind,segment_event_count,counts_toward_rhi';
   const byId = {};
   for (const s of segs) byId[s.id] = s;
-  const body = S.events.map(e => {
+    const body = S.events.map(e => {
     const s = e.segment_id != null ? byId[e.segment_id] : null;
     return [e.id, e.t, e.duration, e.peak, e.rms, e.lat, e.lon, e.spd, e.auto,
-            e.manual || '', e.frames ? e.frames.length : 0,
+            e.auto, e.frames ? e.frames.length : 0,
             e.low_speed ? 1 : 0,
             e.segment_id != null ? e.segment_id : '',
             e.segment_kind || '',
@@ -1683,7 +1666,7 @@ function metaObj() {
   const dur = S.samples.length ? S.samples[S.samples.length - 1].t / 1000 : 0;
   const nLowSpeed = S.events.filter(e => e.low_speed).length;
   return {
-    version: '0.8', exported_at: new Date().toISOString(),
+    version: '0.9', exported_at: new Date().toISOString(),
     device: navigator.userAgent,
     sample_count: S.samples.length, event_count: S.events.length,
     // 速度不足 8 km/h 时记录的事件数。v0.7 起这类事件不再被丢弃，只打标记，
@@ -1706,16 +1689,22 @@ function metaObj() {
         + '⇒ **水泥缝的周期性是真实存在的，只是必须先把门限修对才看得见。**'
         + '⇒ 通用教训：**别用坏参数下采的数据去否决一个特征。**'
         + '顺序必须是「先修门限，再谈特征」。',
-      joint_current_status: '「设计接缝」现仅保留为人工标注选项（缝在图像上是直线，'
-        + '振动给不了这个信息）。振动侧暂时不再自动推断接缝 —— '
-        + '不是因为它不可判别，而是因为接缝的判别需要新的判据设计（待门限 K 值确定后再做）。'
+      joint_current_status: '★ v0.9：采集端的人工标注 UI 已移除，「设计接缝」的人工判定'
+        + '移至 tools/label_tool.html（真值词表以 labels/schema.md v1.1 为唯一真源，'
+        + '共 10 类，含设计接缝）。振动侧暂时不再自动推断接缝 —— '
+        + '不是因为它不可判别，而是因为接缝的判别需要新的判据设计。'
     },
     duration_s: +dur.toFixed(1),
     sample_rate_hz: dur > 0 ? +(S.samples.length / dur).toFixed(1) : null,
     camera_enabled: !!S.stream || !!S.events.some(e => e.frames && e.frames.length) || S.sweeps.length > 0,
     frame_size: [CFG.FRAME_W, CFG.FRAME_H],
-    labels_available: ['坑洼', '减速带', '井盖', '粗糙路面', '设计接缝', '误报'],
-    labelled_events: S.events.filter(e => e.manual).length,
+    // ★ v0.9：人工标注职责整体移出采集端。真值词表 = labels/schema.md v1.1（10 类）：
+    //   坑洼/井盖/减速带/设计接缝/粗糙路面/纵向裂缝/横向裂缝/龟裂/平路/遮挡-无法判定
+    //   本表 auto_label 的「井盖/减速带」「疑似浅坑」「未定」是算法输出，
+    //   语义见 autoType 注释；人工真值一律在标注工具里对照 schema 判定。
+    labeling_policy: '采集端不标注。人工真值用 tools/label_tool.html 按 labels/schema.md v1.1 标注，'
+      + '经 tools/merge_labels.py 合并；本表 final_label 列恒等于 auto_label，'
+      + '仅供下游脚本兼容（列名保留）',
     collection: {
       collected_by: S.collector || null,
       collected_by_note: S.collector
@@ -1920,7 +1909,7 @@ function metaObj() {
     events: S.events.map(e => ({
       id: e.id, t_ms: e.t, duration_ms: e.duration, peak: e.peak, rms: e.rms,
       lat: e.lat, lon: e.lon, speed_kmh: e.spd,
-      auto_label: e.auto, final_label: e.manual || e.auto, manual: !!e.manual,
+      auto_label: e.auto, final_label: e.auto,
       // 记录时速度不足 8 km/h。此类事件 v0.7 起不再丢弃，只打标记交下游判断
       low_speed: !!e.low_speed,
       segment_id: e.segment_id != null ? e.segment_id : null,
@@ -2053,6 +2042,12 @@ $('btnZip').onclick = exportZip;$('btnJson').onclick = () => download('roadcheck
 $('btnRaw').onclick = () => download('roadcheck_raw_' + stamp() + '.csv', new Blob([rawCsv()], { type: 'text/csv;charset=utf-8' }));
 $('btnEv').onclick = () => download('roadcheck_events_' + stamp() + '.csv', new Blob([eventCsv()], { type: 'text/csv;charset=utf-8' }));
 $('btnBack').onclick = () => $('labelCard').scrollIntoView({ behavior: 'smooth' });
+$('btnEvToggle').onclick = () => {
+  evListOpen = !evListOpen;
+  $('evList').classList.toggle('hidden', !evListOpen);
+  if (evListOpen) { $('labelCard').scrollIntoView({ behavior: 'smooth' }); renderEvents(true); }
+  else renderEvents(true);
+};
 $('btnReset').onclick = () => {
   S.samples = []; S.events = []; S.ring = []; S.sweeps = [];
   S.spdMax = 0; S.spdUsable = false; S.lowSpeedEvents = 0;

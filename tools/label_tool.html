@@ -178,11 +178,12 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
   <div class="card" id="helpCard">
     <h2>字段取值与快捷键</h2>
     <div class="legend">
-      <div><b>真值标签</b>：坑洼 · 井盖 · 减速带 · 粗糙路面 · 纵向裂缝 · 横向裂缝 · 龟裂 · 平路 · 遮挡/无法判定</div>
-      <div><b>严格区分</b>「平路」（确定没病害）与「遮挡/无法判定」（看不清）——混用会让准确率虚高。</div>
+      <div><b>真值标签（v1.1，10 类）</b>：坑洼 · 井盖 · 减速带 · 设计接缝 · 粗糙路面 · 纵向裂缝 · 横向裂缝 · 龟裂 · 平路 · 遮挡/无法判定</div>
+      <div><b>严格区分</b>「平路」（确定没病害）与「遮挡/无法判定」（看不清）——混用会让准确率虚高；
+        「设计接缝」是有意建造的伸缩缝，<b>不是</b>横向裂缝。</div>
       <div><b>严重度</b>：light 轻 · medium 中 · severe 重，归属有疑问时<b>记低不记高</b>并在备注说明。</div>
       <div style="margin-top:6px;">
-        <span class="kbd">1</span>–<span class="kbd">9</span> 选真值 ·
+        <span class="kbd">1</span>–<span class="kbd">9</span> + <span class="kbd">0</span> 选真值（0 = 遮挡/无法判定）·
         <span class="kbd">J</span>/<span class="kbd">K</span> 上/下一条 ·
         <span class="kbd">←</span>/<span class="kbd">→</span> 切换帧 ·
         <span class="kbd">F</span> 误报 ·
@@ -198,14 +199,18 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
 const $ = id => document.getElementById(id);
 const enc = new TextEncoder(), dec = new TextDecoder('utf-8');
 
-/* ============ 常量：与 labels/schema.md v1.0 逐字对齐 ============ */
-const TRUTH_IMU = ['坑洼','井盖','减速带','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
+/* ============ 常量：与 labels/schema.md v1.1 逐字对齐 ============ */
+/* v1.1：新增「设计接缝」（2026-09-22 标定证明水泥缝周期性显著 p=0.0233，
+   是真实结构特征而非病害裂缝，须与横向/纵向裂缝区分开）。
+   「设计接缝」此前只存在于采集端人工标注里；采集端 v0.9 起不再承担标注，
+   这里是它唯一的判定入口。 */
+const TRUTH_IMU = ['坑洼','井盖','减速带','设计接缝','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
 const TRUTH_VIS = TRUTH_IMU;
 const SEVERITY  = ['light','medium','severe'];
 const SEV_CN    = { light:'轻', medium:'中', severe:'重' };
 const CONF      = ['high','mid','low'];
 const CONF_CN   = { high:'高', mid:'中', low:'低' };
-const SCHEMA_VERSION = '1.0';
+const SCHEMA_VERSION = '1.1';
 
 /* ============ 极简 ZIP 解压（对应采集端 makeZip 的 STORE 模式） ============ */
 /* 采集端用 method=0（不压缩）打包，所以这里只需读 local file header 后直接取原始字节，
@@ -645,8 +650,9 @@ document.addEventListener('keydown', ev => {
   if (tag === 'input' || tag === 'textarea') return;
   const k = ev.key;
   const n = parseInt(k, 10);
-  if (n >= 1 && n <= 9) {
-    const t = TRUTH_IMU[n - 1]; if (!t) return;
+  if (n >= 0 && n <= 9 && k !== '') {
+    /* v1.1：真值 10 类，键位 1–9 + 0（0 = 第 10 类「遮挡/无法判定」） */
+    const t = TRUTH_IMU[n === 0 ? 9 : n - 1]; if (!t) return;
     if (P.tab === 'ev') { const e = P.events.find(v => v.event_id === P.selEv); if (e) { e.truth_label = t; saveProgress(); render(); } }
     else { const f = P.frames[P.selFr]; if (f) { f.truth_label = t; saveProgress(); render(); } }
     ev.preventDefault(); return;
