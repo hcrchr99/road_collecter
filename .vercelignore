@@ -10,6 +10,7 @@
 *.py
 
 # ---- 开发与生成物 ----
+tests/
 demo_pack.zip
 demo_samples.csv
 sample_run.csv

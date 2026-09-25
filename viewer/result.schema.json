@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RoadCheck viewer LLM result contracts v0",
+  "description": "Static contract. The viewer additionally verifies pack_id and referenced event/segment existence against the loaded ZIP.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["schema", "generated", "reviews"],
+      "properties": {
+        "schema": {"const": "roadcheck.vision_review.v0"},
+        "generated": {"$ref": "#/$defs/source"},
+        "reviews": {"type": "array", "items": {"$ref": "#/$defs/review"}}
+      }
+    },
+    {
+      "type": "object",
+      "required": ["schema", "generated", "reports"],
+      "properties": {
+        "schema": {"const": "roadcheck.segment_report.v0"},
+        "generated": {"$ref": "#/$defs/source"},
+        "reports": {"type": "array", "items": {"$ref": "#/$defs/report"}}
+      }
+    }
+  ],
+  "$defs": {
+    "source": {"enum": ["llm", "human_example"]},
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "id": {"type": "integer", "minimum": 0},
+    "review": {
+      "type": "object",
+      "required": ["event_id", "pack_id", "visual_label", "confidence", "why", "agree_with_imu"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/id"},
+        "pack_id": {"$ref": "#/$defs/text"},
+        "visual_label": {"enum": ["坑洼", "井盖", "减速带", "设计接缝", "粗糙路面", "纵向裂缝", "横向裂缝", "龟裂", "平路", "遮挡/无法判定"]},
+        "confidence": {"enum": ["high", "mid", "low"]},
+        "why": {"$ref": "#/$defs/text"},
+        "agree_with_imu": {"type": "boolean"}
+      }
+    },
+    "report": {
+      "type": "object",
+      "required": ["segment_id", "pack_id", "headline", "score_note", "why", "maintenance", "comparison"],
+      "properties": {
+        "segment_id": {"$ref": "#/$defs/id"},
+        "pack_id": {"$ref": "#/$defs/text"},
+        "headline": {"$ref": "#/$defs/text"},
+        "score_note": {"$ref": "#/$defs/text"},
+        "why": {"$ref": "#/$defs/text"},
+        "comparison": {"$ref": "#/$defs/text"},
+        "maintenance": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["priority", "text", "basis"],
+            "properties": {
+              "priority": {"type": "integer", "minimum": 1},
+              "text": {"$ref": "#/$defs/text"},
+              "basis": {"$ref": "#/$defs/text"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
