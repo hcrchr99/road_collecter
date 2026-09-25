@@ -61,3 +61,7 @@ desktop.ini
 ~$*
 _*.txt
 !reports/*.txt
+
+# Python
+__pycache__/
+*.pyc

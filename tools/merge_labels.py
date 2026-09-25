@@ -33,12 +33,13 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# ---- schema v1.1 定义（与 labels/schema.md 保持一致）----
+# ---- schema v1.2 定义（与 labels/schema.md 保持一致）----
 
 TRUTH_LABELS = {
     "坑洼", "减速带", "井盖", "设计接缝", "粗糙路面",
     "纵向裂缝", "横向裂缝", "龟裂",
     "平路", "遮挡/无法判定",
+    "标线",
 }
 
 IMU_EVENT_FIELDS = [
