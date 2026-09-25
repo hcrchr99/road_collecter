@@ -105,6 +105,18 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
     <div id="loadWarn" class="hint hidden"></div>
   </div>
 
+  <div class="card hidden" id="importCard">
+    <h2>1.5 · 导入已有标注（可选）</h2>
+    <p class="sub">载入本包此前的标注 CSV（事件表或帧表均可），已有判定会回填进界面，
+      改完重新导出即可——用于修订旧标注、双人复核后合并仲裁结论。
+      导入只回填 truth_label / is_false_positive / severity / occlusion / confidence / note，
+      不会覆盖算法字段。</p>
+    <input type="file" id="fileLabels" accept=".csv" class="hidden">
+    <button class="sm" id="btnImport" disabled>选择标注 CSV 导入</button>
+    <span class="meta" id="importInfo"></span>
+    <div id="importErr" class="err hidden"></div>
+  </div>
+
   <div class="card hidden" id="whoCard">
     <h2>2 · 标注者</h2>
     <p class="sub">标注者与标注时间会写进导出文件的每一行，用于后续算标注者一致性（Cohen's Kappa）。</p>
@@ -178,12 +190,16 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
   <div class="card" id="helpCard">
     <h2>字段取值与快捷键</h2>
     <div class="legend">
-      <div><b>真值标签（v1.1，10 类）</b>：坑洼 · 井盖 · 减速带 · 设计接缝 · 粗糙路面 · 纵向裂缝 · 横向裂缝 · 龟裂 · 平路 · 遮挡/无法判定</div>
+      <div><b>真值标签（v1.2，11 类）</b>：坑洼 · 井盖 · 减速带 · 设计接缝 · 粗糙路面 · 纵向裂缝 · 横向裂缝 · 龟裂 · 平路 · 遮挡/无法判定 · <b>标线</b></div>
       <div><b>严格区分</b>「平路」（确定没病害）与「遮挡/无法判定」（看不清）——混用会让准确率虚高；
         「设计接缝」是有意建造的伸缩缝，<b>不是</b>横向裂缝。</div>
+      <div><b>标线</b>：热熔标线（斑马线/停止线/车道线）边缘隆起压过产生的振动——
+        振动真实但<b>不是病害</b>，画面中通常能看到白色/黄色标线。它不是「平路」：
+        平路 = 振动来源不明或路面完全平整。</div>
       <div><b>严重度</b>：light 轻 · medium 中 · severe 重，归属有疑问时<b>记低不记高</b>并在备注说明。</div>
       <div style="margin-top:6px;">
         <span class="kbd">1</span>–<span class="kbd">9</span> + <span class="kbd">0</span> 选真值（0 = 遮挡/无法判定）·
+        <span class="kbd">-</span> 标线 ·
         <span class="kbd">J</span>/<span class="kbd">K</span> 上/下一条 ·
         <span class="kbd">←</span>/<span class="kbd">→</span> 切换帧 ·
         <span class="kbd">F</span> 误报 ·
@@ -199,18 +215,23 @@ input[type=text]:focus{outline:none;border-color:var(--blue);background:#fff;}
 const $ = id => document.getElementById(id);
 const enc = new TextEncoder(), dec = new TextDecoder('utf-8');
 
-/* ============ 常量：与 labels/schema.md v1.1 逐字对齐 ============ */
+/* ============ 常量：与 labels/schema.md v1.2 逐字对齐 ============ */
 /* v1.1：新增「设计接缝」（2026-09-22 标定证明水泥缝周期性显著 p=0.0233，
    是真实结构特征而非病害裂缝，须与横向/纵向裂缝区分开）。
    「设计接缝」此前只存在于采集端人工标注里；采集端 v0.9 起不再承担标注，
-   这里是它唯一的判定入口。 */
-const TRUTH_IMU = ['坑洼','井盖','减速带','设计接缝','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
+   这里是它唯一的判定入口。
+   v1.2：新增「标线」——热熔标线（斑马线/停止线/车道线）边缘有 1~3mm 隆起，
+   骑行压过会产生真实振动但不构成病害。该类只能由人工/LLM 视觉判读产生，
+   autoType（纯 IMU）无法区分标线与浅接缝，值域不含它。 */
+const TRUTH_IMU = ['坑洼','井盖','减速带','设计接缝','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定','标线'];
 const TRUTH_VIS = TRUTH_IMU;
 const SEVERITY  = ['light','medium','severe'];
 const SEV_CN    = { light:'轻', medium:'中', severe:'重' };
 const CONF      = ['high','mid','low'];
 const CONF_CN   = { high:'高', mid:'中', low:'低' };
-const SCHEMA_VERSION = '1.1';
+const SCHEMA_VERSION = '1.2';
+/* 键位：1–9 = 前 9 类，0 = 第 10 类（遮挡/无法判定），- = 第 11 类（标线） */
+const KEY_LABELS = ['1','2','3','4','5','6','7','8','9','0','-'];
 
 /* ============ 极简 ZIP 解压（对应采集端 makeZip 的 STORE 模式） ============ */
 /* 采集端用 method=0（不压缩）打包，所以这里只需读 local file header 后直接取原始字节，
@@ -365,6 +386,8 @@ async function loadZip(file) {
     render();
     $('whoCard').classList.remove('hidden');
     $('workCard').classList.remove('hidden');
+    $('importCard').classList.remove('hidden');
+    $('btnImport').disabled = false;
     $('btnExport').disabled = false;
 
     /* 空包或缺少关键内容时给出明确提示（真实采集包常常是空的） */
@@ -460,7 +483,7 @@ function render() {
 function truthBtnsHtml(sel) {
   return TRUTH_IMU.map((t, i) =>
     '<button class="' + (sel === t ? 'on' : '') + '" data-t="' + t + '">'
-    + '<span class="k">' + (i + 1) + '</span> ' + t + '</button>').join('');
+    + '<span class="k">' + KEY_LABELS[i] + '</span> ' + t + '</button>').join('');
 }
 
 function renderEvList() {
@@ -651,8 +674,15 @@ document.addEventListener('keydown', ev => {
   const k = ev.key;
   const n = parseInt(k, 10);
   if (n >= 0 && n <= 9 && k !== '') {
-    /* v1.1：真值 10 类，键位 1–9 + 0（0 = 第 10 类「遮挡/无法判定」） */
+    /* v1.2：真值 11 类，键位 1–9 + 0（0 = 第 10 类「遮挡/无法判定」）+ -（标线） */
     const t = TRUTH_IMU[n === 0 ? 9 : n - 1]; if (!t) return;
+    if (P.tab === 'ev') { const e = P.events.find(v => v.event_id === P.selEv); if (e) { e.truth_label = t; saveProgress(); render(); } }
+    else { const f = P.frames[P.selFr]; if (f) { f.truth_label = t; saveProgress(); render(); } }
+    ev.preventDefault(); return;
+  }
+  if (k === '-' || k === '_') {
+    /* v1.2：第 11 类「标线」 */
+    const t = TRUTH_IMU[10];
     if (P.tab === 'ev') { const e = P.events.find(v => v.event_id === P.selEv); if (e) { e.truth_label = t; saveProgress(); render(); } }
     else { const f = P.frames[P.selFr]; if (f) { f.truth_label = t; saveProgress(); render(); } }
     ev.preventDefault(); return;
@@ -708,6 +738,66 @@ $('drop').addEventListener('drop', e => {
   const f = e.dataTransfer.files[0];
   if (f) loadZip(f);
 });
+
+/* ============ 导入已有标注（v1.2 新增） ============ */
+/* 事件表按 event_id 匹配，帧表按 frame_id 匹配；只回填人工字段，不覆盖算法字段。
+   支持 .labels.part-*.csv（事件）与 .frames.part-*.csv（帧），按表头自动识别。 */
+function importLabels(file) {
+  const rd = new FileReader();
+  rd.onerror = () => showImportErr('读文件失败');
+  rd.onload = () => {
+    let text = String(rd.result);
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);   // 去 BOM
+    try {
+      const { head, rows } = csvParse(text);
+      if (!rows.length) throw new Error('CSV 没有数据行');
+      const isEvents = head.includes('event_id');
+      const isFrames = head.includes('frame_id');
+      if (!isEvents && !isFrames) throw new Error('表头里既没有 event_id 也没有 frame_id，不像本项目的标注文件');
+      let n = 0;
+      if (isEvents) {
+        rows.forEach(r => {
+          const e = P.events.find(v => v.event_id === parseInt(r.event_id, 10));
+          if (!e) return;
+          if (r.truth_label) { e.truth_label = r.truth_label.trim(); n++; }
+          if (r.is_false_positive) e.is_false_positive = r.is_false_positive.trim();
+          if (r.confidence) e.confidence = r.confidence.trim();
+          if (r.note) e.note = r.note;
+        });
+      } else {
+        rows.forEach(r => {
+          const f = P.frames.find(v => v.frame_id === r.frame_id);
+          if (!f) return;
+          if (r.truth_label) { f.truth_label = r.truth_label.trim(); n++; }
+          if (r.severity) f.severity = r.severity.trim();
+          if (r.occlusion) f.occlusion = r.occlusion.trim();
+          if (r.confidence) f.confidence = r.confidence.trim();
+          if (r.note) f.note = r.note;
+        });
+      }
+      /* 标注者为空时，沿用导入文件里的 */
+      if (!P.annotator && head.includes('labeled_by') && rows[0].labeled_by) {
+        P.annotator = rows[0].labeled_by.trim();
+        $('annotator').value = P.annotator;
+      }
+      if (!n) throw new Error('文件里没有一条已填的 truth_label（或 event_id/frame_id 与本包对不上）');
+      saveProgress(); render();
+      $('importErr').classList.add('hidden');
+      $('importInfo').textContent = '已导入 ' + n + ' 条' + (isEvents ? '事件' : '帧') + '标注（' + file.name + '），可直接修改后重新导出';
+    } catch (err) {
+      showImportErr(err.message || String(err));
+    }
+  };
+  rd.readAsText(file, 'utf-8');
+}
+function showImportErr(msg) {
+  const el = $('importErr');
+  el.textContent = '导入失败：' + msg;
+  el.classList.remove('hidden');
+  $('importInfo').textContent = '';
+}
+$('btnImport').onclick = () => $('fileLabels').click();
+$('fileLabels').onchange = e => { if (e.target.files[0]) importLabels(e.target.files[0]); };
 
 /* ============ 导出 ============ */
 $('btnExport').onclick = () => {
