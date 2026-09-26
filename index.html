@@ -145,7 +145,7 @@
 
   <div class="card">
     <h2><span class="step" id="s2">2</span>授权并试采</h2>
-    <p class="sub" style="margin:0 0 10px;">需要用户手势的原生权限弹窗，<b>一次点击只能出一个</b>。所以分两步：先授权定位与摄像头，再单独授权运动传感器。每步试采 4 秒，确认传感器真的有数据再出发。</p>
+    <p class="sub" style="margin:0 0 10px;"><b>一次点击只能出一个权限弹窗</b>。所以分两步：先授权定位与摄像头，再单独授权运动传感器。每步试采 4 秒，确认传感器真的有数据再出发。</p>
     <button class="primary" id="btnAuth">授权并试采 4 秒</button>
     <div id="trialResult" style="margin-top:10px;"></div>
     <div id="trialCamWrap" class="hidden" style="margin-top:10px;">
@@ -156,10 +156,6 @@
 
   <div class="card">
     <h2><span class="step" id="s2b">2</span>采集者信息</h2>
-    <p class="sub" style="margin:0 0 10px;">
-      这两项会写进数据包的 <b>meta.json</b>。<b>采集者信息不可再生</b>——包一旦导出就无法反推是谁在什么路段采的，
-      请务必在出发前填好。它是团队多人协作时区分数据来源的唯一依据。
-    </p>
     <div class="fields">
       <label class="fld">
         <span class="fk">采集者 <b class="req">必填</b></span>
@@ -189,8 +185,6 @@
 
   <div class="card">
     <h2><span class="step">·</span>采集模式</h2>
-    <p class="sub" style="margin:0 0 10px;">速度门控（8 km/h）是为了滤掉人体动作造成的假事件。但静止或手持模拟时速度恒为 0，
-    门控会把<b>全部</b>事件挡掉——上一版就在这里踩过坑，现在改为可显式选择。</p>
     <div class="modes">
       <label><input type="radio" name="mode" value="ride" checked>
         <span class="mt">骑行 / 车载</span>
