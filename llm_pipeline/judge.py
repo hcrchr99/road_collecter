@@ -258,7 +258,14 @@ def main():
                     help="每事件喂给模型的帧数（>3 时从包内全部帧均匀抽样；缺省 3 关键帧）")
     ap.add_argument("--preprocess", default="none", choices=["none", "clahe"],
                     help="帧预处理：clahe = 自适应直方图均衡（低对比度接缝/纹理增强）")
+    ap.add_argument("--agent", action="store_true",
+                    help="取证循环模式（规划 §3.2）：自检 R1–R4 命中的事件自动补充取证，"
+                         "最多 3 轮；置信度由规则推导。输出 trace.jsonl / escalate.jsonl。"
+                         "缺省提示词为 judge_system_v4.md（对齐生产工作点）")
     args = ap.parse_args()
+
+    if args.agent and not args.prompt:
+        args.prompt = str(PROMPTS_DIR / "judge_system_v4.md")
     from . import l0_extract, unpack
     features_path = config.OUTPUT_DIR / "l0" / "features.jsonl"
     if not features_path.exists():
@@ -267,9 +274,15 @@ def main():
     records = [json.loads(l) for l in
                open(features_path, encoding="utf-8").read().splitlines() if l.strip()]
     with unpack.Pack(config.DEFAULT_PACK) as pack:
-        stats = judge_pack(args.model, pack, records, limit=args.limit,
-                           fresh=args.fresh, out_tag=args.tag, prompt_file=args.prompt,
-                           frames_n=args.frames, preprocess=args.preprocess)
+        if args.agent:
+            from .agent.loop import run_agent_pack
+            stats = run_agent_pack(args.model, pack, records, limit=args.limit,
+                                   fresh=args.fresh, out_tag=args.tag or "agent",
+                                   prompt_file=args.prompt)
+        else:
+            stats = judge_pack(args.model, pack, records, limit=args.limit,
+                               fresh=args.fresh, out_tag=args.tag, prompt_file=args.prompt,
+                               frames_n=args.frames, preprocess=args.preprocess)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
