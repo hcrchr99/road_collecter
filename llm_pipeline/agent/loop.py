@@ -114,8 +114,9 @@ def agent_one(rec, tools, client, system_prompt, state_out, zip_lock):
             trace["final"] = "converged" if not fires else "budget_exhausted"
             break
 
-        # 升级类动作（如 R2 二次取证仍不足）→ ESCALATE，只增不减
-        esc = [f for f in fires if f.action == "r2_escalate"]
+        # 升级类动作（R2 二次取证仍不足 / R4 低置信）→ ESCALATE，只增不减，
+        # review 保留当前判定（round0），由人工终审
+        esc = [f for f in fires if f.action.endswith("_escalate")]
         if esc:
             escalations.append("%s：%s" % (esc[0].rule, esc[0].reason))
             trace["final"] = "escalated"
@@ -313,16 +314,22 @@ def selftest():
            "imu_features": feat(80, 9.0, post=0.01)}
     state = {"rounds": 0, "calls": 1, "actions_done": set(), "usable_kf": 3,
              "extra_frames": 0, "last_fires": [], "frames_shown": 3}
-    # R1：报坑洼 + 无持续位移（post_ratio 0.01 ≤ 0.089）→ 必须火
+    # R1（enforce 档）：报坑洼 + 无持续位移 → 必须火；off 档（默认）→ 不火
+    selfcheck.R1_MODE = "enforce"
     fires = selfcheck.check(rec, {"visual_label": "坑洼", "confidence": "high"}, state)
-    assert any(f.rule == "R1" for f in fires), "R1 未触发"
-    # R1 不因平路触发
+    assert any(f.rule == "R1" for f in fires), "R1(enforce) 未触发"
+    selfcheck.R1_MODE = "off"
+    fires = selfcheck.check(rec, {"visual_label": "坑洼", "confidence": "high"}, state)
+    assert not any(f.rule == "R1" for f in fires), "R1(off) 误触发"
+    # R1 不因平路触发（enforce 档）
+    selfcheck.R1_MODE = "enforce"
     fires = selfcheck.check(rec, {"visual_label": "平路", "confidence": "high"}, state)
     assert not any(f.rule == "R1" for f in fires), "R1 误触发"
     # R1 不因有持续位移的病害触发（真凹陷：post_ratio > 0.089）
     rec_pd = dict(rec, imu_features=feat(120, 6.0, post=0.15))
     fires = selfcheck.check(rec_pd, {"visual_label": "坑洼", "confidence": "high"}, state)
     assert not any(f.rule == "R1" for f in fires), "R1 对有持续位移的病害误触发"
+    selfcheck.R1_MODE = "off"
     # R2：可用帧 0 → 火；再次 → 升级动作
     state2 = dict(state, usable_kf=0)
     fires = selfcheck.check(rec, {"visual_label": "平路", "confidence": "high"}, state2)
@@ -334,9 +341,9 @@ def selftest():
     rec3 = dict(rec, imu_features=feat(200, 1.5))
     fires = selfcheck.check(rec3, {"visual_label": "纵向裂缝", "confidence": "mid"}, state)
     assert any(f.rule == "R3" for f in fires)
-    # R4：模型自报 low → 火
+    # R4：模型自报 low → 升级（不改判）
     fires = selfcheck.check(rec, {"visual_label": "平路", "confidence": "low"}, state)
-    assert any(f.rule == "R4" for f in fires)
+    assert any(f.rule == "R4" and f.action == "r4_escalate" for f in fires), "R4 未升级"
 
     # 置信度推导
     st_ok = dict(state, last_fires=[], usable_kf_final=3)
