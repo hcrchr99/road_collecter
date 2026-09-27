@@ -11,6 +11,7 @@
 h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-width:0}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
+<style>#mapStatus{white-space:pre-line;overflow-wrap:anywhere;flex:1 1 280px}</style>
 </head>
 <body>
 <header><div class="topbar"><div class="brand"><span class="brand-icon">≋</span><b>RoadCheck</b><small>道路观察台</small></div><nav aria-label="页面导航"><a href="#overview">数据概览</a><a href="#explore">道路回看</a><a href="#vision">AI 视觉判读</a><a href="#report">综合报告</a><a href="#limits">能力边界</a></nav><span class="local-dot">● 本地解析</span><a class="soft-link" href="../index.html">前往采集端 ↗</a></div></header>
@@ -32,6 +33,29 @@ h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-
 </main>
 <script id="core">
 'use strict';
+// Only expose diagnostic identifiers, never raw SDK responses (which can contain credentials).
+function mapConversionError(status,result,expected){
+  const safe=value=>{const s=String(value??'');return /^(?:[A-Z][A-Z_]{2,63}|\d{5})$/.test(s)?s:'';};
+  const info=safe(typeof result==='string'?result:result?.info),code=safe(result?.infocode);
+  const tips={
+    INVALID_USER_KEY:'检查 Web端 Key 是否正确、有效。',
+    INVALID_USER_SCODE:'安全密钥验证失败：请使用与 Key 同一条记录的安全密钥；使用代理时检查代理配置。',
+    INVALID_USER_DOMAIN:'域名验证失败：请在高德控制台检查当前网站域名的白名单。',
+    USERKEY_PLAT_NOMATCH:'Key 平台不匹配：请使用 Web端（JS API）Key。',
+    DAILY_QUERY_OVER_LIMIT:'当日调用额度已用尽：请在高德控制台检查额度，恢复后再试。',
+    ACCESS_TOO_FREQUENT:'调用过于频繁：请稍后重试并检查调用频率限制。',
+    IP_QUERY_OVER_LIMIT:'IP 调用量超限：请检查额度限制，稍后重试。',
+    INVALID_USER_IP:'IP 验证失败：请检查高德控制台或代理服务器的 IP 白名单。',
+    INSUFFICIENT_PRIVILEGES:'服务权限不足：请在高德控制台检查此 Key 的服务权限。',
+    SERVICE_NOT_AVAILABLE:'服务不可用：请检查服务权限和代理路径。',
+    INVALID_PARAMS:'请求参数无效：请检查采集包的经纬度及坐标系。'
+  };
+  const names={'10001':'INVALID_USER_KEY','10002':'SERVICE_NOT_AVAILABLE','10003':'DAILY_QUERY_OVER_LIMIT','10004':'ACCESS_TOO_FREQUENT','10005':'INVALID_USER_IP','10006':'INVALID_USER_DOMAIN','10008':'INVALID_USER_SCODE','10009':'USERKEY_PLAT_NOMATCH','10010':'IP_QUERY_OVER_LIMIT','10012':'INSUFFICIENT_PRIVILEGES','20000':'INVALID_PARAMS'};
+  const detail=[info,code].filter(Boolean).join(' / ')||'高德未返回可显示的错误码';
+  const mismatch=status==='complete'&&Array.isArray(result?.locations)&&result.locations.length!==expected;
+  const tip=mismatch?'返回的坐标数量与请求不一致，请重试并检查采集包经纬度。':tips[info]||tips[names[code]]||'请检查网络、Key、安全密钥及代理设置；若仍失败，请将此错误码反馈给维护者。';
+  return 'GPS 坐标转换失败（'+detail+'）。'+tip+' 修改 Key 或安全配置后，请刷新整个页面再填写并连接。';
+}
 // Pure data layer, also exercised by tests/viewer.test.cjs. No DOM dependencies.
 const TRUTH=['坑洼','井盖','减速带','设计接缝','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
 const COLOR={'坑洼':'#A32D2D','减速带':'#854F0B','井盖':'#185FA5','粗糙路面':'#3B6D11','设计接缝':'#5C7A99','井盖/减速带':'#185FA5','疑似浅坑':'#854F0B','未定':'#888780'};
@@ -119,6 +143,8 @@ function validateResult(data,kind,pack){
 }
 </script>
 <script id="app">
+document.getElementById('mapStatus').setAttribute('role','status');
+document.getElementById('mapStatus').setAttribute('aria-live','polite');
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=(v,d=0)=>num(v)===null?'N/A':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:d,minimumFractionDigits:d});
 const time=ms=>num(ms)===null?'N/A':Math.floor(ms/60000)+':'+String(Math.floor(ms/1000)%60).padStart(2,'0');
@@ -176,7 +202,7 @@ async function connectMap(){if(!state.pack){message('请先导入采集包',true
   const pack=state.pack;const run=++mapRun;$('connectMap').disabled=true;$('mapStatus').textContent='正在连接高德…';
   try{if(!window.AMap){window._AMapSecurityConfig=proxy?{serviceHost:proxy}:{securityJsCode:security};await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://webapi.amap.com/maps?v=2.0&key='+encodeURIComponent(key);const timer=setTimeout(()=>reject(Error('地图加载超时，请检查网络与 Key')),15000);script.onload=()=>{clearTimeout(timer);window.AMap?resolve():reject(Error('地图 SDK 未就绪'));};script.onerror=()=>{clearTimeout(timer);reject(Error('地图加载失败'));};document.head.appendChild(script);});}
     if(run!==mapRun)return;const A=window.AMap,track=pack.track.filter((_,i)=>i%Math.max(1,Math.ceil(pack.track.length/1000))===0),events=pack.events.filter(validCoord),points=track.concat(events);if(!points.length)throw Error('本包没有有效 GPS');let converted=[];
-    for(let i=0;i<points.length;i+=40){const chunk=points.slice(i,i+40).map(p=>[+p.lon,+p.lat]);const result=$('coordType').value==='gcj02'?chunk:await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('坐标转换超时')),12000);A.convertFrom(chunk,'gps',(status,result)=>{clearTimeout(timer);status==='complete'&&result.locations?.length===chunk.length?resolve(result.locations):reject(Error('GPS 坐标转换失败'));});});converted.push(...result);if(run!==mapRun)return;}
+    for(let i=0;i<points.length;i+=40){const chunk=points.slice(i,i+40).map(p=>[+p.lon,+p.lat]);const result=$('coordType').value==='gcj02'?chunk:await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('坐标转换超时（未收到高德错误码）。请检查网络及安全代理是否可访问，稍后重试。')),12000);A.convertFrom(chunk,'gps',(status,result)=>{clearTimeout(timer);status==='complete'&&Array.isArray(result?.locations)&&result.locations.length===chunk.length?resolve(result.locations):reject(Error(mapConversionError(status,result,chunk.length)));});});converted.push(...result);if(run!==mapRun)return;}
     if(map)map.destroy();$('amap').hidden=false;map=new A.Map('amap',{zoom:15,center:converted[0],viewMode:'2D'});const route=new A.Polyline({path:converted.slice(0,track.length),strokeColor:'#617e68',strokeWeight:4});map.add(route);mapPaths=[route];
     for(const seg of pack.segments){const path=track.map((p,i)=>p.t_ms>=+seg.t_start_ms&&p.t_ms<=+seg.t_end_ms?converted[i]:null).filter(Boolean);if(path.length>1){const line=new A.Polyline({path,strokeColor:seg.kind==='连续破损路段'?'#A32D2D':'#b88c45',strokeWeight:7,strokeStyle:seg.kind==='连续破损路段'?'solid':'dashed'});map.add(line);mapPaths.push(line);}}
     mapMarkers=events.map((e,i)=>{const marker=new A.CircleMarker({center:converted[track.length+i],radius:6,fillColor:COLOR[e.auto_label]||'#888780',fillOpacity:1,strokeColor:'#fff',strokeWeight:2});marker.on('click',()=>selectEvent(e.id));map.add(marker);return {id:e.id,marker};});map.setFitView();$('routeSvg').hidden=true;$('mapMode').textContent='高德地图 · GCJ-02';$('mapCaption').textContent='地图点位已按所选坐标系转换';$('mapStatus').textContent='已连接；更换采集包需重新授权坐标转换';

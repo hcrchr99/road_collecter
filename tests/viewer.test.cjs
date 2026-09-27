@@ -6,11 +6,23 @@ const path = require('node:path');
 const {performance} = require('node:perf_hooks');
 const html = fs.readFileSync(path.join(__dirname, '../viewer/index.html'), 'utf8');
 const ctx = vm.createContext({TextDecoder, Uint8Array, DataView});
-vm.runInContext(html.match(/<script id="core">([\s\S]*?)<\/script>/)[1] + '\nthis.api={csvParse,zipIndex,parsePack,normalizePack,validateResult};', ctx);
+vm.runInContext(html.match(/<script id="core">([\s\S]*?)<\/script>/)[1] + '\nthis.api={csvParse,zipIndex,parsePack,normalizePack,validateResult,mapConversionError};', ctx);
 const api = ctx.api;
+new vm.Script(html.match(/<script id="app">([\s\S]*?)<\/script>/)[1]);
 const arrayBuffer = b => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log('PASS', name); }
+test('Map errors expose codes and actionable hints without raw responses',()=>{
+  assert.match(api.mapConversionError('error',{info:'INVALID_USER_SCODE',infocode:'10008'},1),/INVALID_USER_SCODE \/ 10008.*同一条记录/);
+  assert.match(api.mapConversionError('error','INVALID_USER_DOMAIN',1),/白名单/);
+  assert.match(api.mapConversionError('error',{infocode:10009},1),/Web端/);
+  assert.match(api.mapConversionError('error',{info:'NEW_PROVIDER_ERROR'},1),/NEW_PROVIDER_ERROR.*维护者/);
+  assert.match(api.mapConversionError('error',null,1),/未返回/);
+  assert.match(api.mapConversionError('complete',{info:'OK',locations:[]},1),/数量/);
+  const sensitive='https://example.test/?key=secret<script>alert(1)</script>';
+  assert.ok(!api.mapConversionError('error',{info:sensitive,infocode:sensitive},1).includes(sensitive));
+  assert.match(api.mapConversionError('error',{},1),/刷新整个页面/);
+});
 function crc32(b) { let c=0xffffffff; for(const x of b){c^=x;for(let j=0;j<8;j++) c=(c>>>1)^((c&1)?0xedb88320:0);} return (c^0xffffffff)>>>0; }
 function zip(entries, method = 0) {
   const local=[],central=[];let offset=0;
