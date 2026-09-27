@@ -43,18 +43,20 @@ function createMapConverter({request,now=()=>performance.now(),sleep=ms=>new Pro
   const key=p=>JSON.stringify(p);
   async function convert(points,active=()=>true,progress=()=>{}){
     const check=()=>{if(!active())throw Error('坐标转换已取消');};check();
-    const missing=[...new Map(points.filter(p=>!cache.has(key(p))).map(p=>[key(p),p])).values()];
-    const resolved=new Map(points.filter(p=>cache.has(key(p))).map(p=>[key(p),cache.get(key(p))]));
+    const entries=points.map(p=>({id:key(p),coords:[p[0],p[1]]}));
+    const missing=[...new Map(entries.filter(p=>!cache.has(p.id)).map(p=>[p.id,p])).values()];
+    const resolved=new Map(entries.filter(p=>cache.has(p.id)).map(p=>[p.id,cache.get(p.id)]));
     for(let i=0;i<missing.length;i+=40){
       const chunk=missing.slice(i,i+40);
       for(let attempt=0;;attempt++){
         check();const pause=350-(now()-lastStart);if(pause>0)await sleep(pause);check();
         progress('正在转换坐标 '+i+' / '+missing.length+'（已复用 '+resolved.size+' 个坐标；上限 3 次/秒）');
-        lastStart=now();const {status,result}=await request(chunk);check();
+        // SDKs may replace array entries or mutate coordinate pairs. Use a fresh copy on every attempt.
+        lastStart=now();const {status,result}=await request(chunk.map(p=>p.coords.slice()));check();
         if(status==='complete'&&Array.isArray(result?.locations)&&result.locations.length===chunk.length){
           const values=result.locations.map(p=>[Number(p.getLng?p.getLng():p.lng??p[0]),Number(p.getLat?p.getLat():p.lat??p[1])]);
           if(!values.every(p=>p.every(Number.isFinite)))throw Error('高德返回了无效坐标，请稍后重试。');
-          chunk.forEach((p,j)=>{cache.set(key(p),values[j]);resolved.set(key(p),values[j]);});
+          chunk.forEach((p,j)=>{cache.set(p.id,values[j]);resolved.set(p.id,values[j]);});
           while(cache.size>10000)cache.delete(cache.keys().next().value);break;
         }
         if(!isMapRateLimit(result))throw Error(mapConversionError(status,result,chunk.length));
@@ -62,7 +64,11 @@ function createMapConverter({request,now=()=>performance.now(),sleep=ms=>new Pro
         const delay=1000*2**attempt;progress('高德请求限流，'+delay/1000+' 秒后自动重试（'+(attempt+1)+'/4）；已完成的坐标保留。');await sleep(delay);check();
       }
     }
-    check();return points.map(p=>resolved.get(key(p)).slice());
+    check();return entries.map(p=>{
+      const value=resolved.get(p.id);
+      if(!Array.isArray(value)||value.length!==2||!value.every(Number.isFinite))throw Error('坐标转换结果不完整，请重新连接；已成功转换的坐标会复用。');
+      return value.slice();
+    });
   }
   return {convert(...args){const job=tail.then(()=>convert(...args));tail=job.catch(()=>{});return job;},clear(){cache.clear();}};
 }

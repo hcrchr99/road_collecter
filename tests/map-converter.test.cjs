@@ -38,5 +38,28 @@ async function main(){
   await Promise.all([serial.convert([points[0]]),serial.convert([points[1]])]);
   assert.ok(serialStarts[1]-serialStarts[0]>=350);
   console.log('PASS cancellation during retry and shared queue between connections');
+
+  const plain=value=>JSON.parse(JSON.stringify(value));
+  for(const mutation of ['replace','in-place']){
+    let attempts=0;const source=points.slice(0,41).map(p=>p.slice()),original=plain(source);
+    const mutating=ctx.create({now:()=>time,sleep:async ms=>{time+=ms;},request:async chunk=>{
+      attempts++;
+      assert.deepEqual(plain(chunk),attempts<=2?original.slice(0,40):original.slice(40));
+      const locations=chunk.map(p=>({getLng:()=>p[0]+.001,getLat:()=>p[1]+.001}));
+      // Capture numeric values before mutating request pairs.
+      const result=locations.map(p=>({lng:p.getLng(),lat:p.getLat()}));
+      if(mutation==='replace')chunk.splice(0,chunk.length,...result);
+      else chunk.forEach(p=>{p[0]+=1;p[1]+=1;});
+      return attempts===1?limited:{status:'complete',result:{locations:result}};
+    }});
+    const converted=await mutating.convert(source);
+    assert.deepEqual(plain(source),original);
+    assert.deepEqual(plain(converted),original.map(p=>[p[0]+.001,p[1]+.001]));
+    assert.equal(attempts,3);
+    converted[0][0]=0;
+    const cached=await mutating.convert(source);
+    assert.equal(attempts,3);assert.equal(cached[0][0],original[0][0]+.001);
+  }
+  console.log('PASS SDK array replacement and pair mutation, retry isolation, stable cache keys and copied output');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
