@@ -11,7 +11,7 @@
 h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-width:0}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
-<style>#mapStatus{white-space:pre-line;overflow-wrap:anywhere;flex:1 1 280px}</style>
+<style>#mapStatus{white-space:pre-line;overflow-wrap:anywhere;flex:1 1 280px}.agent-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px}.agent-timeline{padding-left:24px}.agent-timeline li{padding:10px 0 14px 12px;border-left:2px solid var(--line)}#agentDetail,#agentWarnings{overflow-wrap:anywhere;white-space:pre-line}#agentEvent{width:100%;margin-top:8px}#agentDetail h3{margin-top:18px}#agentPackId{display:block;min-width:240px}@media(max-width:720px){.agent-layout{grid-template-columns:1fr}}</style>
 </head>
 <body>
 <header><div class="topbar"><div class="brand"><span class="brand-icon">≋</span><b>RoadCheck</b><small>道路观察台</small></div><nav aria-label="页面导航"><a href="#overview">数据概览</a><a href="#explore">道路回看</a><a href="#vision">AI 视觉判读</a><a href="#report">综合报告</a><a href="#limits">能力边界</a></nav><span class="local-dot">● 本地解析</span><a class="soft-link" href="../index.html">前往采集端 ↗</a></div></header>
@@ -208,6 +208,7 @@ async function loadZip(file){if(!file)return;const token=++loadToken;message('�
 function render(){const p=state.pack,s=p?.stats;$('packTitle').textContent=p?(state.demo?'示例路线 · 合成演示包':'本地采集包 · 已载入'):'拖入采集包，开始观察';$('packSubtitle').textContent=p?'版本 '+(p.meta.version??'未知')+' · '+p.events.length+' 个事件 · '+Object.keys(p.files).filter(n=>n.endsWith('.jpg')).length+' 张帧 · 当前浏览器内存中读取':'支持采集端 STORE ZIP · 不上传文件';$('sourceTag').textContent=p?(state.demo?'合成演示 · 非真实采集':'本地数据 · 未核验'):'等待导入';$('sourceTag').className='tag '+(state.demo?'example':'blue');$('versionText').textContent=p?'包版本 v'+(p.meta.version??'未知')+' / '+(state.demo?'界面演示':'待团队核验'):'等待采集包';
   const metrics=[['采集里程',s?fmt(s.distanceM===null?null:s.distanceM/1000,2):'—','km',s?fmt(s.duration===null?null:s.duration/60,1)+' 分钟 · '+s.distanceSource:'从采集包读取'],['记录事件',p?p.events.length:'—','次','事件记录不等于确认病害'],['每公里事件',s?fmt(s.density,1):'—','次/km','按采集事件数 ÷ 里程计算'],['画面可用率',s?fmt(s.frameUsable===null?null:s.frameUsable*100,1):'—','%','采集端质检：1 − suspect_ratio']];
   $('metrics').innerHTML=metrics.map(([label,value,unit,sub])=>`<div class="card metric"><span class="muted small">${label}</span><div class="value">${value} <span class="unit">${unit}</span></div><div class="sub">${esc(sub)}</div></div>`).join('');
+  document.dispatchEvent(new Event('roadcheck:pack-change'));
   $('qualityStrip').textContent=p?'低速记录 '+fmt(s.lowCount)+' 条（保留）　 ·　 路段 '+p.segments.length+' 段　 ·　 样本 '+fmt(p.samples.length)+' 条　 ·　 质检抽查 '+fmt(p.meta.frame_quality?.checked)+' 帧':'';
   $('metricMethod').textContent=p?'里程来源：'+s.distanceSource+'。缺失数值显示 N/A；不以 0 代替未知。低速记录按包内 low_speed 标记统计。帧可用率为采集端质检口径，不是“有照片事件的占比”或人工验收可用率。':'导入后显示本包统计口径。';
   $('dataWarnings').textContent=p?.warnings.join(' ')||'';$('dataWarnings').hidden=!p?.warnings.length;
@@ -261,4 +262,6 @@ $('prevFrame').onclick=()=>{state.frame--;renderFrame();};$('nextFrame').onclick
 $('chooseVision').onclick=()=>$('visionFile').click();$('visionFile').onchange=e=>loadResult(e.target.files[0],'vision');$('chooseReport').onclick=()=>$('reportFile').click();$('reportFile').onchange=e=>loadResult(e.target.files[0],'report');$('connectMap').onclick=connectMap;$('offlineMap').onclick=()=>{resetOnline();$('mapStatus').textContent='已返回离线图';};$('fitMap').onclick=()=>map?map.setFitView():renderMap();
 render();loadDemo();
 </script>
+<script src="agent-log.js"></script>
+<script src="agent-panel.js"></script>
 </body></html>
