@@ -33,6 +33,39 @@ h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-
 </main>
 <script id="core">
 'use strict';
+function isMapRateLimit(result){
+  const info=typeof result==='string'?result:result?.info;
+  return ['CUQPS_HAS_EXCEEDED_THE_LIMIT','CKQPS_HAS_EXCEEDED_THE_LIMIT','CQPS_HAS_EXCEEDED_THE_LIMIT','QPS_HAS_EXCEEDED_THE_LIMIT','ACCESS_TOO_FREQUENT'].includes(info)||['10004','10014','10019','10020','10021'].includes(String(result?.infocode));
+}
+// Page-local queue: 350 ms between starts (<3 QPS), bounded memory-only coordinate cache.
+function createMapConverter({request,now=()=>performance.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms))}){
+  const cache=new Map();let tail=Promise.resolve(),lastStart=-Infinity;
+  const key=p=>JSON.stringify(p);
+  async function convert(points,active=()=>true,progress=()=>{}){
+    const check=()=>{if(!active())throw Error('坐标转换已取消');};check();
+    const missing=[...new Map(points.filter(p=>!cache.has(key(p))).map(p=>[key(p),p])).values()];
+    const resolved=new Map(points.filter(p=>cache.has(key(p))).map(p=>[key(p),cache.get(key(p))]));
+    for(let i=0;i<missing.length;i+=40){
+      const chunk=missing.slice(i,i+40);
+      for(let attempt=0;;attempt++){
+        check();const pause=350-(now()-lastStart);if(pause>0)await sleep(pause);check();
+        progress('正在转换坐标 '+i+' / '+missing.length+'（已复用 '+resolved.size+' 个坐标；上限 3 次/秒）');
+        lastStart=now();const {status,result}=await request(chunk);check();
+        if(status==='complete'&&Array.isArray(result?.locations)&&result.locations.length===chunk.length){
+          const values=result.locations.map(p=>[Number(p.getLng?p.getLng():p.lng??p[0]),Number(p.getLat?p.getLat():p.lat??p[1])]);
+          if(!values.every(p=>p.every(Number.isFinite)))throw Error('高德返回了无效坐标，请稍后重试。');
+          chunk.forEach((p,j)=>{cache.set(key(p),values[j]);resolved.set(key(p),values[j]);});
+          while(cache.size>10000)cache.delete(cache.keys().next().value);break;
+        }
+        if(!isMapRateLimit(result))throw Error(mapConversionError(status,result,chunk.length));
+        if(attempt>=4)throw Error(mapConversionError(status,result,chunk.length)+' 已自动重试 4 次；本页已成功转换的坐标会复用。');
+        const delay=1000*2**attempt;progress('高德请求限流，'+delay/1000+' 秒后自动重试（'+(attempt+1)+'/4）；已完成的坐标保留。');await sleep(delay);check();
+      }
+    }
+    check();return points.map(p=>resolved.get(key(p)).slice());
+  }
+  return {convert(...args){const job=tail.then(()=>convert(...args));tail=job.catch(()=>{});return job;},clear(){cache.clear();}};
+}
 // Only expose diagnostic identifiers, never raw SDK responses (which can contain credentials).
 function mapConversionError(status,result,expected){
   const safe=value=>{const s=String(value??'');return /^(?:[A-Z][A-Z_]{2,63}|\d{5})$/.test(s)?s:'';};
@@ -53,8 +86,8 @@ function mapConversionError(status,result,expected){
   const names={'10001':'INVALID_USER_KEY','10002':'SERVICE_NOT_AVAILABLE','10003':'DAILY_QUERY_OVER_LIMIT','10004':'ACCESS_TOO_FREQUENT','10005':'INVALID_USER_IP','10006':'INVALID_USER_DOMAIN','10008':'INVALID_USER_SCODE','10009':'USERKEY_PLAT_NOMATCH','10010':'IP_QUERY_OVER_LIMIT','10012':'INSUFFICIENT_PRIVILEGES','20000':'INVALID_PARAMS'};
   const detail=[info,code].filter(Boolean).join(' / ')||'高德未返回可显示的错误码';
   const mismatch=status==='complete'&&Array.isArray(result?.locations)&&result.locations.length!==expected;
-  const tip=mismatch?'返回的坐标数量与请求不一致，请重试并检查采集包经纬度。':tips[info]||tips[names[code]]||'请检查网络、Key、安全密钥及代理设置；若仍失败，请将此错误码反馈给维护者。';
-  return 'GPS 坐标转换失败（'+detail+'）。'+tip+' 修改 Key 或安全配置后，请刷新整个页面再填写并连接。';
+  const tip=isMapRateLimit(result)?'账号每秒请求次数超限，请暂停其他页面或团队的地图请求后重试。':mismatch?'返回的坐标数量与请求不一致，请重试并检查采集包经纬度。':tips[info]||tips[names[code]]||'请检查网络、Key、安全密钥及代理设置；若仍失败，请将此错误码反馈给维护者。';
+  return 'GPS 坐标转换失败（'+detail+'）。'+tip+(isMapRateLimit(result)?' 无需更换 Key 或坐标系。':' 修改 Key 或安全配置后，请刷新整个页面再填写并连接。');
 }
 // Pure data layer, also exercised by tests/viewer.test.cjs. No DOM dependencies.
 const TRUTH=['坑洼','井盖','减速带','设计接缝','粗糙路面','纵向裂缝','横向裂缝','龟裂','平路','遮挡/无法判定'];
@@ -143,7 +176,12 @@ function validateResult(data,kind,pack){
 }
 </script>
 <script id="app">
+const mapConverter=createMapConverter({request:chunk=>new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(Error('坐标转换超时（未收到高德错误码）。请检查网络及安全代理，稍后重试；本页已完成的转换会复用。')),12000);
+  try{window.AMap.convertFrom(chunk,'gps',(status,result)=>{clearTimeout(timer);resolve({status,result});});}catch(e){clearTimeout(timer);reject(e);}
+})});
 document.getElementById('mapStatus').setAttribute('role','status');
+document.getElementById('clearBtn').addEventListener('click',()=>mapConverter.clear());
 document.getElementById('mapStatus').setAttribute('aria-live','polite');
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=(v,d=0)=>num(v)===null?'N/A':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:d,minimumFractionDigits:d});
@@ -202,7 +240,7 @@ async function connectMap(){if(!state.pack){message('请先导入采集包',true
   const pack=state.pack;const run=++mapRun;$('connectMap').disabled=true;$('mapStatus').textContent='正在连接高德…';
   try{if(!window.AMap){window._AMapSecurityConfig=proxy?{serviceHost:proxy}:{securityJsCode:security};await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://webapi.amap.com/maps?v=2.0&key='+encodeURIComponent(key);const timer=setTimeout(()=>reject(Error('地图加载超时，请检查网络与 Key')),15000);script.onload=()=>{clearTimeout(timer);window.AMap?resolve():reject(Error('地图 SDK 未就绪'));};script.onerror=()=>{clearTimeout(timer);reject(Error('地图加载失败'));};document.head.appendChild(script);});}
     if(run!==mapRun)return;const A=window.AMap,track=pack.track.filter((_,i)=>i%Math.max(1,Math.ceil(pack.track.length/1000))===0),events=pack.events.filter(validCoord),points=track.concat(events);if(!points.length)throw Error('本包没有有效 GPS');let converted=[];
-    for(let i=0;i<points.length;i+=40){const chunk=points.slice(i,i+40).map(p=>[+p.lon,+p.lat]);const result=$('coordType').value==='gcj02'?chunk:await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('坐标转换超时（未收到高德错误码）。请检查网络及安全代理是否可访问，稍后重试。')),12000);A.convertFrom(chunk,'gps',(status,result)=>{clearTimeout(timer);status==='complete'&&Array.isArray(result?.locations)&&result.locations.length===chunk.length?resolve(result.locations):reject(Error(mapConversionError(status,result,chunk.length)));});});converted.push(...result);if(run!==mapRun)return;}
+    const coords=points.map(p=>[+p.lon,+p.lat]);converted=$('coordType').value==='gcj02'?coords:await mapConverter.convert(coords,()=>run===mapRun,text=>{$('mapStatus').textContent=text;});if(run!==mapRun)return;
     if(map)map.destroy();$('amap').hidden=false;map=new A.Map('amap',{zoom:15,center:converted[0],viewMode:'2D'});const route=new A.Polyline({path:converted.slice(0,track.length),strokeColor:'#617e68',strokeWeight:4});map.add(route);mapPaths=[route];
     for(const seg of pack.segments){const path=track.map((p,i)=>p.t_ms>=+seg.t_start_ms&&p.t_ms<=+seg.t_end_ms?converted[i]:null).filter(Boolean);if(path.length>1){const line=new A.Polyline({path,strokeColor:seg.kind==='连续破损路段'?'#A32D2D':'#b88c45',strokeWeight:7,strokeStyle:seg.kind==='连续破损路段'?'solid':'dashed'});map.add(line);mapPaths.push(line);}}
     mapMarkers=events.map((e,i)=>{const marker=new A.CircleMarker({center:converted[track.length+i],radius:6,fillColor:COLOR[e.auto_label]||'#888780',fillOpacity:1,strokeColor:'#fff',strokeWeight:2});marker.on('click',()=>selectEvent(e.id));map.add(marker);return {id:e.id,marker};});map.setFitView();$('routeSvg').hidden=true;$('mapMode').textContent='高德地图 · GCJ-02';$('mapCaption').textContent='地图点位已按所选坐标系转换';$('mapStatus').textContent='已连接；更换采集包需重新授权坐标转换';
