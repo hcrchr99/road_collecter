@@ -18,4 +18,7 @@ data=api.join({...input,'trace.jsonl':line({...trace,final:'budget_exhausted'})}
 data=api.join({...input,'trace.jsonl':line(trace)+'\n'+line(trace),'escalate.jsonl':line({event_id:0,reason:['低置信'],at:'2026-09-27'})},'pack',[0]);assert.equal(data.events[0].traces.length,2);assert.equal(data.events[0].needsAttention,true);assert.ok(data.warnings.length);
 assert.throws(()=>api.join({'escalate.jsonl':line({event_id:0,reason:[]})},'pack',[0]),/请选择/);
 const fs=require('node:fs'),vm=require('node:vm');new vm.Script(fs.readFileSync(require('node:path').join(__dirname,'../viewer/agent-panel.js'),'utf8'));
+const converted=api.toVision(api.join(input,'pack',[0]));assert.equal(converted.reviews[0].pack_id,'pack');assert.equal(converted.reviews[0].visual_label,'标线');
+for(const source of ['net_failed','parse_failed','l0_blocked']){const d=api.join({'reviews.jsonl':line(review)+'\n'+line({...review,source})},'pack',[0]);assert.equal(api.toVision(d).reviews.length,0);assert.equal(api.toVision(d).skipped,1);}
+assert.throws(()=>api.toVision(api.join({'reviews.jsonl':line({...review,source:'unknown'})},'pack',[0])),/来源未知/);
 console.log('PASS Agent logs: trace/review/escalation, 11-class compatibility, missing/duplicate records, source mismatch, malformed JSON and script syntax');

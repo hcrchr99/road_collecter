@@ -15,7 +15,10 @@ class Element{
 nodes.set('vision',new Element());nodes.set('explore',new Element());
 const nav=new Element('nav'),document={createElement:tag=>new Element(tag),getElementById:id=>nodes.get(id),querySelector:()=>nav,addEventListener:(name,fn)=>listeners.set(name,fn)};
 const state={pack:{packId:'pack',events:[{id:'0'},{id:'1'}]},demo:false};let selected;
-const ctx=vm.createContext({document,window:{RoadCheckAgentLog:api},state,selectEvent:id=>{selected=id;}});
+let visionRenders=0;
+const ctx=vm.createContext({document,window:{RoadCheckAgentLog:api},state,selectEvent:id=>{selected=id;},renderVision:()=>{visionRenders++;}});
+const html=fs.readFileSync(path.join(__dirname,'../viewer/index.html'),'utf8');
+vm.runInContext(html.match(/<script id="core">([\s\S]*?)<\/script>/)[1],ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../viewer/agent-panel.js'),'utf8'),ctx);
 const get=id=>nodes.get(id),trace={event_id:0,rounds:[{round:0,status:'ok',label:'标线',conf_model:'low'}],escalations:[],final:'escalated'};
 const file=(name,rows)=>({name,size:100,text:async()=>rows.map(JSON.stringify).join('\n')});
@@ -23,11 +26,15 @@ async function upload(files){const target={files,value:'chosen'};await get('agen
 async function main(){
   get('agentChoose').click();assert.match(get('agentStatus').textContent,/请填写/);
   get('agentPackId').value='pack';get('agentConfirm').checked=true;get('agentChoose').click();assert.equal(get('agentFiles').clicked,true);
-  await upload([file('trace.jsonl',[trace]),file('reviews.jsonl',[{event_id:0,visual_label:'标线',source:'llm',confidence:'low',why:'<script>not executable</script>'}])]);
+  await upload([file('trace.jsonl',[trace]),file('reviews.jsonl',[{event_id:0,visual_label:'标线',source:'llm',confidence:'low',agree_with_imu:false,why:'<script>not executable</script>'}])]);
+  assert.equal(state.vision.reviews[0].visual_label,'标线');assert.equal(visionRenders,1);assert.equal(state.vision.reviews[0].needs_attention,true);
   assert.equal(get('agentResults').hidden,false);assert.match(get('agentDetail').textContent,/首轮判读/);assert.match(get('agentDetail').textContent,/<script>not executable<\/script>/);
   get('agentDetail').children.find(e=>e.tag==='button').click();assert.equal(selected,0);assert.equal(get('explore').scrolled,true);
   await upload([file('trace.jsonl',[{...trace,event_id:99}])]);assert.match(get('agentStatus').textContent,/导入失败/);assert.match(get('agentDetail').textContent,/事件 #0/);
   listeners.get('roadcheck:pack-change')();assert.equal(get('agentResults').hidden,false);
+  const previous=state.vision;
+  await upload([file('reviews.jsonl',[{event_id:0,source:'llm',visual_label:'标线'}])]);assert.equal(state.vision,previous);assert.match(get('agentStatus').textContent,/导入失败/);
+  get('agentClear').click();assert.equal(state.vision,null);
   state.pack={packId:'new',events:[]};listeners.get('roadcheck:pack-change')();assert.equal(get('agentResults').hidden,true);assert.equal(get('agentConfirm').checked,false);
   state.demo=true;get('agentChoose').click();assert.match(get('agentStatus').textContent,/真实采集包/);
   console.log('PASS Agent panel DOM lifecycle: confirmation, import, plain-text output, event linkage, failed import retention, pack change, demo guard');

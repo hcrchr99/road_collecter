@@ -32,7 +32,7 @@
       "properties": {
         "event_id": {"$ref": "#/$defs/id"},
         "pack_id": {"$ref": "#/$defs/text"},
-        "visual_label": {"enum": ["坑洼", "井盖", "减速带", "设计接缝", "粗糙路面", "纵向裂缝", "横向裂缝", "龟裂", "平路", "遮挡/无法判定"]},
+        "visual_label": {"enum": ["坑洼", "井盖", "减速带", "设计接缝", "粗糙路面", "纵向裂缝", "横向裂缝", "龟裂", "平路", "遮挡/无法判定", "标线"]},
         "confidence": {"enum": ["high", "mid", "low"]},
         "why": {"$ref": "#/$defs/text"},
         "agree_with_imu": {"type": "boolean"}

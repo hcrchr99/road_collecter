@@ -43,6 +43,16 @@
     }
     return {packId,events:[...events.values()].sort((a,b)=>a.id-b.id),warnings};
   }
-  const api={parse,join,endings,actions};
+  function toVision(data){
+    const reviews=[];let skipped=0;
+    for(const e of data.events){
+      const r=e.review;if(!r)continue;
+      if(['net_failed','parse_failed','l0_blocked'].includes(r.source)){skipped++;continue;}
+      if(r.source!=='llm')throw Error('事件 #'+e.id+' 判读来源未知，不能标记为 LLM');
+      reviews.push({event_id:e.id,pack_id:data.packId,visual_label:r.visual_label,confidence:r.confidence,why:r.why,agree_with_imu:r.agree_with_imu,needs_attention:Boolean(e.needsAttention)});
+    }
+    return {schema:'roadcheck.vision_review.v0',generated:'llm',origin:'agent_logs',skipped,reviews};
+  }
+  const api={parse,join,toVision,endings,actions};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.RoadCheckAgentLog=api;
 })(typeof window==='undefined'?{}:window);
