@@ -12,10 +12,29 @@ h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 <style>#mapStatus{white-space:pre-line;overflow-wrap:anywhere;flex:1 1 280px}.agent-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px}.agent-timeline{padding-left:24px}.agent-timeline li{padding:10px 0 14px 12px;border-left:2px solid var(--line)}#agentDetail,#agentWarnings{overflow-wrap:anywhere;white-space:pre-line}#agentEvent{width:100%;margin-top:8px}#agentDetail h3{margin-top:18px}#agentPackId{display:block;min-width:240px}@media(max-width:720px){.agent-layout{grid-template-columns:1fr}}</style>
+<style>
+.agent-intro{margin:0 0 30px;padding:26px;border:1px solid #bdd1e4;border-top:4px solid var(--blue);border-radius:12px;background:linear-gradient(120deg,#edf5fc,#fff)}
+.agent-intro-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.agent-intro h2{font-size:25px;margin:5px 0}.agent-intro p{margin:8px 0}
+.agent-flow{list-style:none;counter-reset:agent-step;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:0;margin:20px 0}
+.agent-flow li{counter-increment:agent-step;padding:16px;background:#fff;border:1px solid #d5e1ed;border-radius:9px;min-width:0;position:relative}.agent-flow li::before{content:counter(agent-step);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;font-weight:700;margin-bottom:10px}.agent-flow strong{display:block;margin-bottom:6px}.agent-flow span{color:var(--muted);font-size:13px}.agent-intro-note{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid #d5e1ed;padding-top:12px}.agent-intro-note p{flex:1 1 300px}
+@media(max-width:1000px){.agent-flow{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.agent-intro{padding:18px}.agent-intro h2{font-size:22px}.agent-flow{grid-template-columns:1fr;gap:8px}.agent-flow li{padding:12px 12px 12px 52px}.agent-flow li::before{position:absolute;left:12px;top:12px}}
+</style>
 </head>
 <body>
 <header><div class="topbar"><div class="brand"><span class="brand-icon">≋</span><b>RoadCheck</b><small>道路观察台</small></div><nav aria-label="页面导航"><a href="#overview">数据概览</a><a href="#explore">道路回看</a><a href="#vision">AI 视觉判读</a><a href="#report">综合报告</a><a href="#limits">能力边界</a></nav><span class="local-dot">● 本地解析</span><a class="soft-link" href="../index.html">前往采集端 ↗</a></div></header>
 <main class="wrap">
+<section class="agent-intro" id="agent-role" aria-labelledby="agent-role-title">
+  <div class="agent-intro-head"><div><div class="eyebrow">Agent / 智能体工作流程</div><h2 id="agent-role-title">让每一次判读，都有证据与过程可查</h2><p>Agent 在运行环境中分析采集包：</p></div><span class="tag blue">本页作用：展示判读结果与运行记录</span></div>
+  <ol class="agent-flow" aria-label="Agent 五步分析流程">
+    <li><strong>读取证据</strong><span>读取事件图片和传感器特征。</span></li>
+    <li><strong>模型判读</strong><span>调用模型判断路面类型，如坑洼、井盖、标线。</span></li>
+    <li><strong>规则自检与再取证</strong><span>用规则检查结果，必要时补充图片再判读。</span></li>
+    <li><strong>输出结论与人工复核</strong><span>输出最终分类、置信度和理由，将部分事件交给人工复核。</span></li>
+    <li><strong>保存结果与日志</strong><span>保存判读结果和运行日志。</span></li>
+  </ol>
+  <div class="agent-intro-note"><p class="small muted">以上为工作流程说明，不代表正在执行。Agent 在独立运行环境中完成分析；本网页导入已有日志后，展示真实运行过程和最终判读，不会自动启动模型。</p><a class="button" href="#agent">查看智能体工作台 ↓</a><a class="button" href="#vision">查看 AI 判读 ↓</a></div>
+</section>
 <div class="hero"><div><div class="eyebrow">Road intelligence / v0.1</div><h1>每一次经过，都让道路更清晰。</h1><p class="muted">从骑行中的一次颠簸，到有现场依据的道路观察。</p></div><div class="row"><button id="demoBtn">体验合成演示</button><button class="primary" id="chooseZip">导入采集包 ↗</button></div></div>
 <div class="import-bar" id="drop"><div class="row"><span class="import-icon">↥</span><div><strong id="packTitle">拖入采集包，开始观察</strong><div class="muted small" id="packSubtitle">支持采集端 STORE ZIP · 文件仅在当前浏览器内存中读取</div></div></div><div class="row"><span class="tag" id="sourceTag">等待导入</span><button id="clearBtn">清空数据</button></div></div>
 <input id="zipFile" type="file" accept=".zip" hidden><input id="visionFile" type="file" accept=".json" hidden><input id="reportFile" type="file" accept=".json" hidden>
