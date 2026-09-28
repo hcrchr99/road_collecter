@@ -5,7 +5,7 @@ const inserted=[],wrapped=[];
 const document={querySelector:selector=>({parentElement:{classList:{contains:()=>selector==='#overview h2'}},before:()=>wrapped.push(selector),after:p=>inserted.push({selector,p})}),createElement:tag=>({tag,children:[],append(...items){this.children.push(...items);}}),createTextNode:text=>({text})};
 vm.runInNewContext(script,{document});
 assert.equal(inserted.length,8);assert.deepEqual(wrapped,['#overview h2']);
-assert.ok(inserted.find(x=>x.selector==='#report h2').p.children[1].text.includes('尚未接通自动路段报告'));
+assert.ok(inserted.find(x=>x.selector==='#report h2').p.children[1].text.includes('不是模型撰写的诊断'));
 assert.ok(inserted.find(x=>x.selector==='#agent h2').p.children[1].text.includes('不代表当前正在运行'));
 assert.ok(inserted.every(x=>x.p.className==='agent-role-note'));
 assert.ok(html.indexOf('src="agent-panel.js"')<html.indexOf('id="agent-role-notes"'));

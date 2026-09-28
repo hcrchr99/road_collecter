@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),{summarize}=require('../viewer/report-summary.js');
+const pack={packId:'p',meta:{},events:[{id:'0',segment_id:0,t_ms:10,auto_label:'未定',low_speed:1},{id:'1',segment_id:'',t_ms:20,low_speed:0},{id:'2',segment_id:9,t_ms:20}],segments:[]};
+const vision={generated:'llm',reviews:[{event_id:0,pack_id:'p',visual_label:'标线',confidence:'low',agree_with_imu:false},{event_id:1,pack_id:'other',visual_label:'坑洼'}]};
+let s=summarize(pack,vision);assert.equal(s.events.length,3);assert.equal(s.reviews.length,1);assert.equal(s.attention.length,1);assert.equal(s.disagree.length,1);assert.equal(s.unreviewed,2);assert.equal(s.lowSpeedUnknown,1);assert.equal(s.example,false);
+s=summarize(pack,vision,{segment_id:0,t_start_ms:0,t_end_ms:25});assert.equal(s.events.length,2);assert.equal(s.labels[0][0],'标线');
+assert.equal(summarize(pack,null).unreviewed,3);assert.equal(summarize(pack,{...vision,generated:'human_example'}).example,true);assert.equal(summarize({...pack,events:[]},null).events.length,0);
+console.log('PASS factual report: whole pack, segment mapping, cross-pack rejection, coverage, missing data, example source');
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const nodes={segmentTabs:{replaceChildren(){this.innerHTML='';}},segmentFacts:{},reportBody:{}};
+const state={pack,vision,segment:null};
+const ctx=vm.createContext({state,window:{RoadCheckReport:{summarize}},$:id=>nodes[id],esc:x=>String(x).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')});
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../viewer/report-panel.js'),'utf8'),ctx);
+vm.runInContext('renderSummary()',ctx);assert.match(nodes.reportBody.innerHTML,/程序汇总/);assert.match(nodes.reportBody.innerHTML,/data-event="0"/);assert.match(nodes.reportBody.innerHTML,/未覆盖 2/);
+state.pack=null;vm.runInContext('renderSummary()',ctx);assert.match(nodes.reportBody.innerHTML,/导入采集包后/);
+console.log('PASS report UI: facts, evidence links, waiting state');
