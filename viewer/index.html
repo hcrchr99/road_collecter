@@ -14,6 +14,7 @@ h1{text-wrap:balance}.import-bar>.row{flex-wrap:nowrap}.import-bar>.row>div{min-
 <style>#mapStatus{white-space:pre-line;overflow-wrap:anywhere;flex:1 1 280px}.agent-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px}.agent-timeline{padding-left:24px}.agent-timeline li{padding:10px 0 14px 12px;border-left:2px solid var(--line)}#agentDetail,#agentWarnings{overflow-wrap:anywhere;white-space:pre-line}#agentEvent{width:100%;margin-top:8px}#agentDetail h3{margin-top:18px}#agentPackId{display:block;min-width:240px}@media(max-width:720px){.agent-layout{grid-template-columns:1fr}}</style>
 <style>
 .agent-intro{margin:0 0 30px;padding:26px;border:1px solid #bdd1e4;border-top:4px solid var(--blue);border-radius:12px;background:linear-gradient(120deg,#edf5fc,#fff)}
+.agent-role-note{font-size:14px;line-height:1.8;color:var(--blue);margin:10px 0 8px;padding:8px 12px;border-left:3px solid var(--blue);background:var(--blue-bg);max-width:850px}.agent-role-note strong{margin-right:6px}.agent-heading-copy{min-width:0;flex:1}
 .agent-intro-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.agent-intro h2{font-size:25px;margin:5px 0}.agent-intro p{margin:8px 0}
 .agent-flow{list-style:none;counter-reset:agent-step;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:0;margin:20px 0}
 .agent-flow li{counter-increment:agent-step;padding:16px;background:#fff;border:1px solid #d5e1ed;border-radius:9px;min-width:0;position:relative}.agent-flow li::before{content:counter(agent-step);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;font-weight:700;margin-bottom:10px}.agent-flow strong{display:block;margin-bottom:6px}.agent-flow span{color:var(--muted);font-size:13px}.agent-intro-note{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid #d5e1ed;padding-top:12px}.agent-intro-note p{flex:1 1 300px}
@@ -283,4 +284,24 @@ render();loadDemo();
 </script>
 <script src="agent-log.js"></script>
 <script src="agent-panel.js"></script>
+<script id="agent-role-notes">
+// Recording captions describe actual responsibilities, not live execution status.
+(()=>{
+  const notes=[
+    ['.hero h1','Agent 的作用','把采集包中的图片与传感器证据转化为可核验的道路判读。本网页回放已有运行日志，不会因导入采集包而自动启动 Agent。'],
+    ['#agent-role-title','Agent 的作用','接收指定采集包的分析任务，在独立运行环境中完成读取证据、模型判读、规则自检、补充取证和结果保存。下方五步是流程说明，不是实时进度。'],
+    ['#overview h2','Agent 的输入','采集包提供事件图片与传感器特征，供 Agent 逐事件分析。这里的里程、事件数和画面可用率由程序统计，不是 Agent 推理生成。'],
+    ['#explore h2','Agent 与证据回看的协同','Agent 用图片和传感器特征判断事件；本区联动图片、波形与地图，帮助人工核对其结论。地图定位由展示程序完成，不是 Agent 的决策。'],
+    ['#agent h2','Agent 的分析与决策','读取日志回放逐轮判读和规则触发的取证动作；命中条件时补充图片再判读，低置信等情况交给人工复核。仅展示实际记录，不代表当前正在运行。'],
+    ['#vision h2','Agent 的结果反馈','显示 Agent 最终分类、置信度和判断理由，并与 IMU 算法标签对照。导入 reviews.jsonl 后自动同步，帮助发现分歧并回看现场证据。'],
+    ['#report h2','Agent 的接入边界','当前 Agent 输出事件级判读，尚未接通自动路段报告。本区仅展示另行导入的报告或明确标注的示例，不代表 Agent 已自动生成养护建议。'],
+    ['#limits h2','Agent 与人工的分工','Agent 提供证据辅助判断，低置信、证据不足和失败记录仍需人工核验；结果不等同人工真值，不替代正式道路检测。']
+  ];
+  for(const [selector,label,description] of notes){
+    const heading=document.querySelector(selector);if(!heading)continue;
+    if(heading.parentElement.classList.contains('section-head')){const wrapper=document.createElement('div');wrapper.className='agent-heading-copy';heading.before(wrapper);wrapper.append(heading);}
+    const p=document.createElement('p');p.className='agent-role-note';const strong=document.createElement('strong');strong.textContent=label+'：';p.append(strong,document.createTextNode(description));heading.after(p);
+  }
+})();
+</script>
 </body></html>

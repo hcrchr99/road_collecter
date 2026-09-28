@@ -1,0 +1,12 @@
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(path.join(__dirname,'../viewer/index.html'),'utf8');
+const script=html.match(/<script id="agent-role-notes">([\s\S]*?)<\/script>/)[1];
+const inserted=[],wrapped=[];
+const document={querySelector:selector=>({parentElement:{classList:{contains:()=>selector==='#overview h2'}},before:()=>wrapped.push(selector),after:p=>inserted.push({selector,p})}),createElement:tag=>({tag,children:[],append(...items){this.children.push(...items);}}),createTextNode:text=>({text})};
+vm.runInNewContext(script,{document});
+assert.equal(inserted.length,8);assert.deepEqual(wrapped,['#overview h2']);
+assert.ok(inserted.find(x=>x.selector==='#report h2').p.children[1].text.includes('尚未接通自动路段报告'));
+assert.ok(inserted.find(x=>x.selector==='#agent h2').p.children[1].text.includes('不代表当前正在运行'));
+assert.ok(inserted.every(x=>x.p.className==='agent-role-note'));
+assert.ok(html.indexOf('src="agent-panel.js"')<html.indexOf('id="agent-role-notes"'));
+console.log('PASS eight title captions, positioning, workbench load order and truthful scope');
