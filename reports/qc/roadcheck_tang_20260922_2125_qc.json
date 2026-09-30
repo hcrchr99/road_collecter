@@ -1,0 +1,410 @@
+{
+ "schema": "roadcheck.qc.v0",
+ "pack_id": "roadcheck_tang_20260922_2125",
+ "pack_path": "C:\\Users\\Admin\\WorkBuddy\\2026-09-18-23-02-29\\road_check\\raw\\roadcheck_tang_20260922_2125.zip",
+ "generated_at": "2026-09-26 12:15:21",
+ "version": "0.6",
+ "meta_brief": {
+  "sample_count": 24336,
+  "event_count": 152,
+  "duration_s": 405.6,
+  "sample_rate_hz": 60,
+  "sweep_count": 150,
+  "low_speed_event_count": null
+ },
+ "detector": {
+  "noise_kind": "quantile20_3s_K4(<=v0.6)",
+  "refractory": "fixed_1500ms",
+  "smooth_tau_s": 0.01
+ },
+ "checks": [
+  {
+   "group": "meta",
+   "item": "sample_rate_hz",
+   "value": 60,
+   "threshold": ">=50",
+   "status": "pass",
+   "note": "正常约 60 Hz；实测有 47 Hz 的包，采样不足会压低事件幅度",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "sample_count == samples.csv 行数",
+   "value": "24336 vs 24336",
+   "threshold": "相等",
+   "status": "pass",
+   "note": "对不上说明包不完整或被改过",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "duration_s 与样本时间轴",
+   "value": "405.6s vs 405.6s",
+   "threshold": "相对差<2%",
+   "status": "pass",
+   "note": "",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "collection.gate_blocked_segments",
+   "value": 314,
+   "threshold": "==0",
+   "status": "warn",
+   "note": "被速度门控拦下的段数 >0，说明有静默漏报（时间戳不可重建）",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "collection.speed_usable",
+   "value": true,
+   "threshold": "true",
+   "status": "pass",
+   "note": "",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "frame_quality.suspect_ratio",
+   "value": 0.861,
+   "threshold": "<0.5",
+   "status": "fail",
+   "note": "自检只测平坦/偏色，测不了暗与失焦—— vision 组另有补充检查",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "sampling_gaps.usable",
+   "value": true,
+   "threshold": "true",
+   "status": "pass",
+   "note": "count=0 max=0ms",
+   "subject": null
+  },
+  {
+   "group": "meta",
+   "item": "collection.mode(终值)",
+   "value": "ride",
+   "threshold": "—",
+   "status": "info",
+   "note": "旧版只有导出那一刻的模式；若中途切过模式则无法事后重建（已知坑）",
+   "subject": null
+  },
+  {
+   "group": "sampling",
+   "item": "重复时间戳(dt==0)",
+   "value": 142,
+   "threshold": "—",
+   "status": "info",
+   "note": "导出排序过的包 dt==0 对 EMA 无实质影响；逆序才是数据坏了",
+   "subject": null
+  },
+  {
+   "group": "sampling",
+   "item": "逆序样本(dt<0)",
+   "value": 0,
+   "threshold": "==0",
+   "status": "pass",
+   "note": "",
+   "subject": null
+  },
+  {
+   "group": "sampling",
+   "item": "采样中断(>800ms)",
+   "value": 0,
+   "threshold": "==0",
+   "status": "pass",
+   "note": "iOS 手指按屏会让 devicemotion 停摆（已知坑），中断期信号不可信",
+   "subject": null
+  },
+  {
+   "group": "reproduction",
+   "item": "事件数复现",
+   "value": 152,
+   "threshold": "=meta 152",
+   "status": "pass",
+   "note": "逐事件起始时刻 151/152 精确匹配(±3ms)",
+   "subject": null
+  },
+  {
+   "group": "periodicity",
+   "item": "min(iv) 与不应期关系",
+   "value": 1575.0,
+   "threshold": "<=不应期下界则有人造周期嫌疑",
+   "status": "pass",
+   "note": "不应期下界 1500ms（≥v0.8 为动态钳制下限；≤v0.6 固定 1500ms）",
+   "subject": null
+  },
+  {
+   "group": "periodicity",
+   "item": "间隔 CV",
+   "value": 1.945,
+   "threshold": ">=0.25",
+   "status": "pass",
+   "note": "CV 低 = 事件节奏接近规则节拍，疑似不应期充当节奏发生器",
+   "subject": null
+  },
+  {
+   "group": "periodicity",
+   "item": "旧门限公式",
+   "value": "quantile20_3s",
+   "threshold": "已废弃",
+   "status": "fail",
+   "note": "max(1.2, 4×20%分位) ≡ 1.013σ（与σ无关），事件连续触发靠不应期压制——事件数不含病害信息（meta.detection_criteria.threshold_old_bug）",
+   "subject": null
+  },
+  {
+   "group": "crest",
+   "item": "crest 中位",
+   "value": 2.42,
+   "threshold": ">=2.0",
+   "status": "pass",
+   "note": "crest 中位 <2 说明一半以上\"事件\"连本底波动都没超过（均匀粗糙路随机起伏 crest 本就 2~3）",
+   "subject": null
+  },
+  {
+   "group": "crest",
+   "item": "crest>=4 占比",
+   "value": 0.1382,
+   "threshold": "参考值",
+   "status": "info",
+   "note": "尾部占比是真实病害事件的判别特征（零假设检验中纯噪声 ≈0）",
+   "subject": null
+  },
+  {
+   "group": "missed",
+   "item": "速度门控静默丢弃样本",
+   "value": 644,
+   "threshold": "—",
+   "status": "warn",
+   "note": "≤v0.6 低速时事件被直接删除且无时间戳，事后无法重建（v0.7 起已修复）",
+   "subject": null
+  },
+  {
+   "group": "missed",
+   "item": "不应期吞掉样本",
+   "value": 2302,
+   "threshold": "—",
+   "status": "info",
+   "note": "二道防线的正常代价；关键看最长连续段是否覆盖可疑病害时段",
+   "subject": null
+  },
+  {
+   "group": "missed",
+   "item": "事件开启期间吞掉样本",
+   "value": 293,
+   "threshold": "—",
+   "status": "info",
+   "note": "单事件上限 3000ms 内的正常合并",
+   "subject": null
+  },
+  {
+   "group": "threshold",
+   "item": "超门限样本占比",
+   "value": 0.13934,
+   "threshold": "参考 <2%",
+   "status": "warn",
+   "note": "v0.8 实测 0.62%%；旧公式实测 14.4%%（1σ 门限打在 23~28%% 样本上的直接表现）",
+   "subject": null
+  },
+  {
+   "group": "null_hypothesis",
+   "item": "噪声事件数 vs 真实事件数",
+   "value": "173.1(平稳)/117.2(包络) vs 152",
+   "threshold": "真实 > 两种替代",
+   "status": "fail",
+   "note": "任一替代信号的事件数 >= 真实 => 事件数不含病害信息，不能当\"病害个数\"报",
+   "subject": null
+  },
+  {
+   "group": "vision",
+   "item": "亮度-时间相关 r",
+   "value": -0.037,
+   "threshold": ">=-0.3",
+   "status": "pass",
+   "note": "r 明显为负 = 光照持续恶化（暮光入夜），后半程帧不可再生地变差",
+   "subject": "vision_frames"
+  },
+  {
+   "group": "vision",
+   "item": "模糊帧占比(lap_var<50)",
+   "value": 0.9333,
+   "threshold": "<0.3",
+   "status": "warn",
+   "note": "失焦/运动模糊（帧自检测不了暗与糊，必须自己算）",
+   "subject": "vision_frames"
+  },
+  {
+   "group": "vision",
+   "item": "暗帧占比(亮度<50)",
+   "value": 0.9667,
+   "threshold": "<0.2",
+   "status": "warn",
+   "note": "",
+   "subject": "vision_frames"
+  },
+  {
+   "group": "physics",
+   "item": "采集时段(UTC+8)",
+   "value": "2026-09-22 21:18 ~ 2026-09-22 21:25",
+   "threshold": "避开暮光",
+   "status": "warn",
+   "note": "9 月下旬华东日落约 17:50；傍晚采集需对照亮度趋势（vision.brightness_time_r）判断是否整趟暮光→入夜。exported_at 为 UTC，+8 换算",
+   "subject": null
+  },
+  {
+   "group": "physics",
+   "item": "GSD@x(近场~2m)",
+   "value": {
+    "0.5": 3.5,
+    "1.0": 5.6,
+    "1.5": 9.1,
+    "2.0": 14.1
+   },
+   "threshold": "裂缝需<=2.5",
+   "status": "info",
+   "note": "解析式 GSD(x)=(h²+x²)/(h·f_px)。5mm 裂缝要占 2px 需 GSD<=2.5 mm/px，当前参数下任何 x 都达不到 => 裂缝细类在本挂载下物理不可见，分辨率上限是采集端自己缩的（FRAME_W/JPEG q），属改常量可改善项",
+   "subject": null
+  }
+ ],
+ "reproduction": {
+  "noise_kind": "quantile20_3s_K4(<=v0.6)",
+  "meta_event_count": 152,
+  "replayed_event_count": 152,
+  "pack_events_csv_rows": 152,
+  "matched_starts": 151,
+  "pack_events_missing_in_replay": [
+   232336
+  ],
+  "peak_ratio_median": 1.0,
+  "status": "pass"
+ },
+ "periodicity": {
+  "min_interval_ms": 1575.0,
+  "cv": 1.945,
+  "events": 152,
+  "frac_1400_2100": 0.709
+ },
+ "signal": {
+  "speed_gate": {
+   "samples": 644,
+   "segments": 31,
+   "total_ms": 35533.0,
+   "longest": [
+    {
+     "t0_ms": 399319,
+     "t1_ms": 405269,
+     "ms": 5950.0
+    },
+    {
+     "t0_ms": 342302,
+     "t1_ms": 347532,
+     "ms": 5230.0
+    },
+    {
+     "t0_ms": 303168,
+     "t1_ms": 307502,
+     "ms": 4334.0
+    }
+   ]
+  },
+  "refractory": {
+   "samples": 2302,
+   "segments": 139,
+   "total_ms": 126376.0,
+   "longest": [
+    {
+     "t0_ms": 217452,
+     "t1_ms": 231319,
+     "ms": 13867.0
+    },
+    {
+     "t0_ms": 192373,
+     "t1_ms": 197352,
+     "ms": 4979.0
+    },
+    {
+     "t0_ms": 25185,
+     "t1_ms": 29569,
+     "ms": 4384.0
+    }
+   ]
+  },
+  "in_event": {
+   "samples": 293,
+   "segments": 87,
+   "total_ms": 4314.0,
+   "longest": [
+    {
+     "t0_ms": 9352,
+     "t1_ms": 9719,
+     "ms": 367.0
+    },
+    {
+     "t0_ms": 63802,
+     "t1_ms": 64102,
+     "ms": 300.0
+    },
+    {
+     "t0_ms": 230436,
+     "t1_ms": 230702,
+     "ms": 266.0
+    }
+   ]
+  },
+  "crest_median": 2.42,
+  "crest_ge4_ratio": 0.1382,
+  "over_threshold_ratio": 0.13934
+ },
+ "null_hypothesis": {
+  "n_each": 20,
+  "real_events": 152,
+  "stationary_events_mean": 173.1,
+  "stationary_events_sd": 1.1,
+  "envelope_events_mean": 117.2,
+  "envelope_events_sd": 4.2,
+  "noise_crest_ge4_mean": {
+   "stationary": 0.0306,
+   "envelope": 0.0039
+  },
+  "noise_min_interval_ms": {
+   "stationary": 1567.7,
+   "envelope": 1570.3
+  },
+  "informative": false
+ },
+ "vision": {
+  "sweep_frames_total": 150,
+  "lap_var_median": 0.2,
+  "blur_ratio": 0.9333,
+  "dark_ratio": 0.9667,
+  "brightness_median": 0.4,
+  "brightness_time_r": -0.037
+ },
+ "physics": {
+  "collection_window_local": {
+   "local_start": "2026-09-22 21:18",
+   "local_end": "2026-09-22 21:25"
+  },
+  "gsd_mm_per_px": {
+   "assumptions": "h=1000mm, HFOV=68°, 存储宽=480px",
+   "at_x_m": {
+    "0.5": 3.5,
+    "1.0": 5.6,
+    "1.5": 9.1,
+    "2.0": 14.1
+   }
+  }
+ },
+ "verdict": {
+  "can_judge": false,
+  "channels": {
+   "imu": "unusable",
+   "vision_frames": "degraded"
+  },
+  "fail_count": 3,
+  "warn_count": 6,
+  "summary": "不该判：旧门限公式（≡1σ，已证明事件数不含病害信息）；零假设检验未通过（噪声事件数 >= 真实）"
+ },
+ "elapsed_s": 2.6
+}

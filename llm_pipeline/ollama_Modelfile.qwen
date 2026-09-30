@@ -1,0 +1,7 @@
+# qwen3-vl:8b 的派生模型：把上下文从默认 4096 提到 16384
+# 背景：OpenAI 兼容端点会忽略请求级 num_ctx；OLLAMA_CONTEXT_LENGTH 实测亦未生效。
+# 3 张 640×480 关键帧 ≈ 4k 视觉 token，4096 窗口下生成只剩 18 token → 空响应。
+# 创建：ollama create qwen3-vl-8b-16k -f ollama_Modelfile.qwen
+# 权重共享原模型 blob，不占额外磁盘。
+FROM qwen3-vl:8b
+PARAMETER num_ctx 16384
